@@ -47,7 +47,7 @@ Open your terminal/command prompt and run:
 
 ```bash
 # Download the project
-git clone https://github.com/your-username/rdioCallsAPI.git
+git clone https://github.com/swiftraccoon/sdrtrunk-rdio-api.git
 cd rdioCallsAPI
 ```
 
