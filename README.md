@@ -1,277 +1,379 @@
 # RdioCallsAPI
 
-A lightweight, modular API server for ingesting radio calls from SDRTrunk via the RdioScanner protocol.
+A simple, easy-to-use API server that receives radio call recordings from SDRTrunk and stores them for later use.
 
-## Features
+## What Does This Do?
 
-- **RdioScanner Protocol Compatible**: Full compatibility with SDRTrunk's RdioScanner upload format
-- **Modular Design**: Easy to customize and extend for your specific needs
-- **Multiple Storage Options**: 
-  - Filesystem storage with automatic organization
-  - SQLite database for metadata
-  - Option to discard audio files (metadata only)
-- **Security Features**:
-  - API key authentication with IP and system restrictions
-  - Rate limiting
-  - Request logging and audit trail
-- **Monitoring**:
-  - Health check endpoint
-  - Statistics and metrics
-  - Configurable logging
-- **Performance**:
-  - HTTP/2 support for SDRTrunk compatibility
-  - SQLite with WAL mode for concurrent access
-  - Connection pooling
-  - Efficient file handling
+If you're using SDRTrunk to record radio communications, this server will:
+- ✅ Receive audio files from SDRTrunk automatically
+- ✅ Store them organized by date and system
+- ✅ Keep track of all the details (frequency, talkgroup, etc.)
+- ✅ Provide a web interface to see statistics
+- ✅ Work with any scanner or radio system SDRTrunk supports
 
-## Quick Start
+## Requirements
 
-### Installation
+Before you start, you need:
+- **Python 3.13** installed on your computer
+- **SDRTrunk** set up and working with your radio system
+- **Basic command line knowledge** (we'll guide you through it)
 
-1. Clone the repository
-2. Install uv package manager:
+### Installing Python 3.13
+
+**Windows:**
+1. Go to [python.org/downloads](https://www.python.org/downloads/)
+2. Download Python 3.13
+3. Run the installer and check "Add Python to PATH"
+
+**Mac:**
 ```bash
+# Using Homebrew (install Homebrew first if you don't have it)
+brew install python@3.13
+```
+
+**Linux (Ubuntu/Debian):**
+```bash
+sudo apt update
+sudo apt install python3.13 python3.13-venv
+```
+
+## Quick Setup (5 minutes)
+
+> 📖 **New to servers or command lines?** Check out our detailed [Getting Started Guide](docs/GETTING_STARTED.md) for step-by-step instructions with screenshots.
+
+### Step 1: Get the Code
+
+Open your terminal/command prompt and run:
+
+```bash
+# Download the project
+git clone https://github.com/your-username/rdioCallsAPI.git
+cd rdioCallsAPI
+```
+
+### Step 2: Install Dependencies
+
+We use a tool called `uv` to manage dependencies. Install it:
+
+**Windows/Mac/Linux:**
+```bash
+# Install uv package manager
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-3. Install dependencies:
+**Windows (alternative using PowerShell):**
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+Then install the project dependencies:
 ```bash
 uv sync
 ```
 
-4. Copy and customize the configuration:
+### Step 3: Create Your Configuration
+
 ```bash
+# Generate a config file with examples
+uv run python cli.py init
+
+# Copy it to the main config file
 cp config.example.yaml config.yaml
-# Edit config.yaml with your settings
 ```
 
-5. Run the server:
-```bash
-uv run python main.py serve
+### Step 4: Edit Your Configuration
+
+Open `config.yaml` in any text editor and change these important settings:
+
+```yaml
+# Basic server settings
+server:
+  host: "0.0.0.0"        # Listen on all network interfaces
+  port: 8080             # Port number (change if needed)
+
+# Security (IMPORTANT: Change this!)
+security:
+  api_keys:
+    - key: "change-this-to-something-secret"
+      description: "My SDRTrunk"
 ```
 
-The API will be available at `http://localhost:8080` with HTTP/2 support (required for SDRTrunk).
-
-### CLI Usage
-
-The enhanced CLI provides multiple commands for managing the server:
+### Step 5: Start the Server
 
 ```bash
-# Start server with default config
-uv run python main.py serve
+uv run python cli.py serve
+```
 
-# Start server with custom settings
-uv run python main.py serve --port 8080 --host 0.0.0.0
+You should see:
+```
+🚀 Starting RdioCallsAPI Server
+├─ Address: http://0.0.0.0:8080
+├─ HTTP/2: Enabled (required for SDRTrunk)
+├─ Processing Mode: store
+├─ Debug Mode: False
+├─ API Docs: http://0.0.0.0:8080/docs
+├─ Database: data/rdio_calls.db
+├─ Audio Storage: data/audio
+└─ API Keys: 1 configured
 
-# Generate example configuration
-uv run python main.py init
+Press Ctrl+C to stop the server
+```
 
-# View recent calls and statistics
-uv run python main.py stats --last 20
-uv run python main.py stats --system 123 --hours 24
+### Step 6: Configure SDRTrunk
+
+1. **Open SDRTrunk**
+2. **Go to the Playlist Editor**
+3. **Click the "Streaming" tab**
+4. **Add a new stream:**
+   - Type: `RdioScanner`
+   - Host: `your-server-ip` (use `localhost` if on same computer)
+   - Port: `8080` (or whatever you configured)
+   - API Key: `change-this-to-something-secret` (whatever you put in config.yaml)
+   - System ID: `1` (or your system number)
+
+5. **Click "Test"** to verify it's working
+6. **Save and start your playlist**
+
+## Verifying It's Working
+
+### Check the Web Interface
+
+Open your web browser and go to:
+- **Health Check**: `http://localhost:8080/health`
+- **Statistics**: `http://localhost:8080/metrics`
+- **API Documentation**: `http://localhost:8080/docs`
+
+### Check Your Files
+
+Audio files will be stored in:
+```
+data/audio/2025/01/15/1/20250115_143022_TG100.mp3
+```
+
+### View Recent Calls
+
+```bash
+# See the last 10 calls received
+uv run python cli.py stats --last 10
+
+# See calls from the last 24 hours
+uv run python cli.py stats --hours 24
+```
+
+## Common Commands
+
+### Starting and Stopping
+
+```bash
+# Start the server
+uv run python cli.py serve
+
+# Start with debug logging
+uv run python cli.py serve --log-level DEBUG
+
+# Start on a different port
+uv run python cli.py serve --port 9000
+```
+
+### Managing Data
+
+```bash
+# View recent activity
+uv run python cli.py stats
 
 # Test database connection
-uv run python main.py test-db
+uv run python cli.py test-db
 
-# Clean old data
-uv run python main.py clean --days 30 --dry-run
-uv run python main.py clean --days 30
+# Clean up old files (older than 30 days)
+uv run python cli.py clean --days 30
 
-# Export calls to CSV
-uv run python main.py export -o calls.csv --start-date 2024-01-01
+# Export data to CSV file
+uv run python cli.py export -o my_calls.csv
 ```
 
-## Configuration
+### Getting Help
 
-The server is configured via YAML file. See `config.yaml` for all available options.
+```bash
+# See all available commands
+uv run python cli.py --help
 
-### Key Configuration Options
+# Get help for a specific command
+uv run python cli.py serve --help
+```
 
-#### API Security
+## Configuration Options
+
+### Storage Settings
+
+```yaml
+file_handling:
+  storage:
+    strategy: "filesystem"      # Where to store files
+    directory: "data/audio"     # Storage folder
+    organize_by_date: true      # Organize into date folders
+    retention_days: 30          # Delete files older than this (0 = keep forever)
+```
+
+### Processing Modes
+
+```yaml
+processing:
+  mode: "store"  # What to do with calls
+```
+
+- **`log_only`**: Just keep the information, don't save audio files
+- **`store`**: Save audio files and information (recommended)
+- **`process`**: Save everything and allow future processing
+
+### Security Options
+
 ```yaml
 security:
   api_keys:
     - key: "your-secret-key"
-      description: "Main SDRTrunk node"
-      allowed_ips: ["192.168.1.100"]  # Optional IP restriction
-      allowed_systems: ["1", "2"]      # Optional system restriction
-```
-
-#### Storage Options
-```yaml
-file_handling:
-  storage:
-    strategy: "filesystem"  # Options: discard, filesystem, database
-    directory: "data/audio"
-    organize_by_date: true
-    retention_days: 30  # 0 = keep forever
-```
-
-#### Processing Modes
-```yaml
-processing:
-  mode: "store"  # Options: log_only, store, process
-```
-
-- `log_only`: Log metadata only, discard audio files
-- `store`: Store audio files and metadata
-- `process`: Store and enable for future processing hooks
-
-## API Documentation
-
-### RdioScanner Upload Endpoint
-
-**POST** `/api/call-upload`
-
-Accepts multipart form data with the following fields:
-
-#### Required Fields
-- `key` (string): API key for authentication
-- `system` (string): System ID
-- `dateTime` (integer): Unix timestamp in seconds
-- `audio` (file): MP3 audio file
-
-#### Optional Fields
-- `frequency` (integer): Frequency in Hz
-- `talkgroup` (integer): Talkgroup ID
-- `source` (integer): Source radio ID
-- `systemLabel` (string): Human-readable system name
-- `talkgroupLabel` (string): Human-readable talkgroup name
-- `talkgroupGroup` (string): Talkgroup category
-- `talkerAlias` (string): Talker alias
-- `patches` (string): Comma-separated list of patched talkgroups
-- `test` (integer): Test mode flag (1 for test)
-
-#### Response
-
-**Success (200)**
-```json
-{
-  "status": "ok",
-  "message": "Call received and processed",
-  "callId": "1_1234567890_100"
-}
-```
-
-**Error (400/401/500)**
-```json
-{
-  "detail": "Error message"
-}
-```
-
-### Monitoring Endpoints
-
-**GET** `/health`
-```json
-{
-  "status": "healthy",
-  "timestamp": "2024-01-01T12:00:00Z",
-  "version": "1.0.0",
-  "database": "connected"
-}
-```
-
-**GET** `/metrics`
-```json
-{
-  "total_calls": 1234,
-  "calls_today": 56,
-  "calls_last_hour": 7,
-  "systems": {"1": 500, "2": 734},
-  "talkgroups": {"100": 123, "200": 456},
-  "upload_sources": {"192.168.1.100": 1234},
-  "storage_used_mb": 567.8,
-  "audio_files_count": 1234
-}
-```
-
-## SDRTrunk Configuration
-
-Configure SDRTrunk to use this API:
-
-1. In SDRTrunk, go to Streaming configuration
-2. Add a new RdioScanner stream
-3. Set the following:
-   - **URL**: `http://your-server:8080/api/call-upload`
-   - **API Key**: Your configured API key
-   - **System ID**: Your system ID (numeric)
-
-## Database Schema
-
-The SQLite database stores:
-
-- **radio_calls**: Main call records with all metadata
-- **upload_logs**: Audit trail of all upload attempts
-- **system_stats**: Aggregated statistics by system
-- **talkgroup_stats**: Aggregated statistics by talkgroup
-- **api_keys**: API key management (if using database auth)
-
-## Development
-
-### Project Structure
-```
-rdioCallsAPI/
-├── src/
-│   ├── api/           # API endpoints
-│   ├── database/      # Database management
-│   ├── models/        # Data models
-│   ├── services/      # Business logic
-│   └── utils/         # Utilities
-├── config.yaml        # Default configuration
-├── main.py           # Entry point
-└── requirements.txt  # Dependencies
-```
-
-### Extending the API
-
-1. **Add new endpoints**: Create new routers in `src/api/`
-2. **Add processing**: Implement in `src/services/`
-3. **Add storage backends**: Extend `src/utils/file_handler.py`
-4. **Add authentication**: Extend `src/api/rdioscanner.py`
-
-### Production Deployment
-
-For production, you can run directly with Hypercorn:
-
-```bash
-uv run hypercorn src.api:create_app --bind 0.0.0.0:8080 --workers 4
-```
-
-Or use the main.py script:
-
-```bash
-uv run python main.py --host 0.0.0.0 --port 8080
-```
-
-### Running Tests
-
-```bash
-uv run pytest tests/
+      description: "SDRTrunk in basement"
+      allowed_ips: ["192.168.1.100"]    # Optional: only allow from this IP
+      allowed_systems: ["1", "2"]       # Optional: only allow these system IDs
+  
+  rate_limit:
+    enabled: true
+    max_requests_per_minute: 60        # Prevent spam
 ```
 
 ## Troubleshooting
 
-### Common Issues
+### "Connection refused" or "Can't connect"
 
-1. **"Invalid API key"**: Check your API key configuration and ensure it matches what SDRTrunk is sending
+1. **Check if server is running**: Look for the startup message
+2. **Check the port**: Make sure SDRTrunk uses the same port as your config
+3. **Check firewalls**: Make sure port 8080 (or your port) is open
+4. **Check the IP address**: Use your computer's actual IP address, not `localhost` if SDRTrunk is on a different computer
 
-2. **"File format not accepted"**: Ensure SDRTrunk is configured to send MP3 files
+### "Invalid API key"
 
-3. **Database locked errors**: Ensure WAL mode is enabled in configuration
+1. **Check your config.yaml**: Make sure the API key is correct
+2. **Check SDRTrunk**: Make sure the API key matches exactly
+3. **Restart the server** after changing config.yaml
 
-4. **High memory usage**: Adjust `file_handling.max_file_size_mb` and implement cleanup schedules
+### "File format not supported"
 
-### Debug Mode
+1. **Check SDRTrunk audio settings**: Make sure it's set to MP3
+2. **Check file size limits** in your config.yaml
 
-Enable debug logging:
-```yaml
-logging:
-  level: "DEBUG"
-server:
-  debug: true
+### Server won't start
+
+1. **Check Python version**: Run `python3 --version` (should be 3.13+)
+2. **Check dependencies**: Run `uv sync` again
+3. **Check config file**: Run `uv run python cli.py init` to regenerate
+4. **Check logs**: Look for error messages in the console
+
+### Getting More Help
+
+1. **Enable debug logging**:
+   ```yaml
+   logging:
+     level: "DEBUG"
+   server:
+     debug: true
+   ```
+
+2. **Check the health endpoint**: `http://localhost:8080/health`
+
+3. **View recent activity**: `uv run python cli.py stats`
+
+4. **Test the connection**: `uv run python cli.py test-db`
+
+## Advanced Usage
+
+### Running as a Service (Linux)
+
+Create `/etc/systemd/system/rdiocalls.service`:
+
+```ini
+[Unit]
+Description=RdioCallsAPI Server
+After=network.target
+
+[Service]
+Type=simple
+User=your-username
+WorkingDirectory=/path/to/rdioCallsAPI
+ExecStart=/home/your-username/.cargo/bin/uv run python cli.py serve
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
 ```
 
-## License
+Then:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable rdiocalls
+sudo systemctl start rdiocalls
+```
 
-MIT License - see LICENSE file for details
+### Running Behind a Reverse Proxy
+
+If you're using nginx or Apache, the server works great behind a proxy. Just make sure to:
+1. Forward the correct headers
+2. Set appropriate timeouts for file uploads
+3. Configure SSL/TLS termination at the proxy level
+
+### Multiple SDRTrunk Instances
+
+You can have multiple SDRTrunk instances connect to the same server:
+
+```yaml
+security:
+  api_keys:
+    - key: "scanner1-key"
+      description: "Living room scanner"
+      allowed_systems: ["1"]
+    - key: "scanner2-key"
+      description: "Garage scanner"
+      allowed_systems: ["2", "3"]
+```
+
+## What Gets Stored
+
+### Audio Files
+- **Location**: `data/audio/YYYY/MM/DD/SYSTEM/`
+- **Format**: MP3 files from SDRTrunk
+- **Naming**: `YYYYMMDD_HHMMSS_TG{talkgroup}.mp3`
+
+### Database Information
+- Call timestamp and duration
+- System and talkgroup information
+- Frequency and source radio
+- Audio file location and size
+- Upload source and API key used
+
+### Log Files
+- **Location**: `logs/rdio_calls_api.log`
+- **Contains**: All server activity and errors
+- **Rotation**: Automatic when files get too large
+
+## API Reference
+
+See the full API documentation at: [docs/API.md](docs/API.md)
+
+Quick reference:
+- **Upload**: `POST /api/call-upload` (used by SDRTrunk)
+- **Health**: `GET /health` (check if server is working)
+- **Stats**: `GET /metrics` (see activity statistics)
+- **Docs**: `GET /docs` (interactive API documentation)
+
+## Support
+
+If you need help:
+1. Check this README first
+2. Look at the troubleshooting section
+3. Check the [API documentation](docs/API.md)
+4. Check our [Getting Started Guide](docs/GETTING_STARTED.md) for common issues
+5. Open an issue on GitHub with:
+   - Your operating system
+   - Python version (`python3 --version`)
+   - Error messages
+   - Your config.yaml (remove any API keys!)
+

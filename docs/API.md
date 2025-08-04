@@ -182,17 +182,63 @@ curl -X POST http://localhost:8080/api/call-upload \
 
 ## SDRTrunk Integration
 
+### Quick Setup
+
 To configure SDRTrunk to use this API:
 
-1. Open SDRTrunk
-2. Go to **Playlist Editor** → **Streaming**
-3. Add a new **RdioScanner** configuration
-4. Configure as follows:
-   - **Host**: Your server hostname/IP
-   - **Port**: Your server port (default 8080)
-   - **API Key**: Your configured API key
-   - **System ID**: Your numeric system ID
-   - **Test**: Click to verify connectivity
+1. **Open SDRTrunk**
+2. **Go to Playlist Editor** (View menu → Playlist Editor)
+3. **Click the "Streaming" tab** (at the bottom of the window)
+4. **Click the "+" button** to add a new stream
+5. **Select "RdioScanner"** from the dropdown menu
+6. **Fill in these settings:**
+   - **Host**: `localhost` (if on same computer) or your server's IP address
+   - **Port**: `8080` (or whatever you configured)
+   - **API Key**: The key you set in your config.yaml file
+   - **System ID**: A number representing your radio system (like `1`)
+7. **Click "Test"** to verify the connection works
+8. **Click "Save"** to keep the settings
+
+### Detailed Configuration
+
+**Host Field:**
+- Use `localhost` if SDRTrunk and the server are on the same computer
+- Use your server's IP address (like `192.168.1.100`) if they're on different computers
+- Use your domain name if you have one set up
+
+**Port Field:**
+- Default is `8080`
+- Must match the `port` setting in your server's config.yaml
+- Common alternatives: `8000`, `9000`, `3000`
+
+**API Key Field:**
+- Must exactly match one of the `api_keys` in your config.yaml
+- Case-sensitive
+- No extra spaces or quotes
+
+**System ID Field:**
+- A number that identifies your radio system
+- Can be any number (1, 123, 456, etc.)
+- Used to organize recordings from different systems
+- If you're monitoring multiple systems, use different numbers for each
+
+### Testing the Connection
+
+After configuring, always test the connection:
+1. Click the **"Test" button** in SDRTrunk
+2. You should see **"Test successful!"**
+3. If it fails, check:
+   - Server is running
+   - Host and port are correct
+   - API key matches exactly
+   - No firewall blocking the connection
+
+### Multiple SDRTrunk Instances
+
+You can connect multiple SDRTrunk instances to the same server:
+- Use the same or different API keys
+- Use different System IDs for each instance
+- Each will appear separately in the statistics
 
 ## Security Considerations
 
