@@ -1,0 +1,83 @@
+# RdioCallsAPI Configuration Example
+# Copy this file to config.yaml and modify as needed
+
+# Server configuration
+server:
+  host: "0.0.0.0"
+  port: 8080
+  cors_origins: ["*"]
+  enable_docs: true
+  debug: false
+
+# Database configuration
+database:
+  path: "data/rdio_calls.db"
+  enable_wal: true
+
+# Security configuration
+security:
+  # API keys for authentication (optional)
+  # If no keys are configured, all requests are allowed
+  api_keys: []
+    # - key: "your-api-key-here"
+    #   description: "Main SDRTrunk instance"
+    #   allowed_ips: []  # Empty = all IPs allowed
+    #   allowed_systems: []  # Empty = all systems allowed
+  
+  # Rate limiting
+  rate_limit:
+    enabled: true
+    max_requests_per_minute: 60
+    max_requests_per_hour: 1000
+    max_requests_per_day: 10000
+
+# File handling configuration
+file_handling:
+  accepted_formats: [".mp3", ".wav", ".m4a"]
+  max_file_size_mb: 100
+  min_file_size_kb: 1
+  temp_directory: "data/temp"
+  
+  storage:
+    strategy: "filesystem"  # Options: discard, filesystem, database
+    directory: "data/audio"
+    organize_by_date: true
+    retention_days: 30  # 0 = keep forever
+
+# Processing configuration
+processing:
+  mode: "store"  # Options: log_only, store, process
+  store_fields: [
+    "timestamp", "system", "frequency", "talkgroup", "source",
+    "systemLabel", "talkgroupLabel", "talkgroupGroup",
+    "patches", "talkerAlias"
+  ]
+
+# Monitoring configuration
+monitoring:
+  health_check:
+    enabled: true
+    path: "/health"
+  
+  metrics:
+    enabled: true
+    path: "/metrics"
+  
+  statistics:
+    enabled: true
+    update_interval_minutes: 5
+
+# Logging configuration
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  format: "json"  # Options: json, text
+  
+  file:
+    enabled: true
+    path: "data/logs/rdio_calls.log"
+    max_size_mb: 100
+    backup_count: 5
+  
+  console:
+    enabled: true
+    colorize: true

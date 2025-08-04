@@ -1,0 +1,42 @@
+version: 2
+updates:
+  # Enable version updates for Python dependencies in pyproject.toml
+  # Note: Dependabot uses "pip" ecosystem but reads pyproject.toml
+  # After merging PRs, run 'uv sync' to update uv.lock
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "dylanhawkins"
+    assignees:
+      - "dylanhawkins"
+    commit-message:
+      prefix: "deps(uv)"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "python"
+      - "uv"
+    
+  # Enable version updates for GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "dylanhawkins"
+    assignees:
+      - "dylanhawkins"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "github-actions"
