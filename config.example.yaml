@@ -1,83 +1,169 @@
-# RdioCallsAPI Configuration Example
+# RdioCallsAPI Configuration
+# This file documents all available configuration options for the RdioScanner API server
 # Copy this file to config.yaml and modify as needed
 
-# Server configuration
+# Server Configuration - HTTP/2 server settings for SDRTrunk compatibility
 server:
+  # Host to bind to
+  # "0.0.0.0" = Listen on all network interfaces (typical for production)
+  # "127.0.0.1" = Listen only on localhost (for local testing)
   host: "0.0.0.0"
+  
+  # Port number (default: 8080)
+  # SDRTrunk expects the standard /api/call-upload endpoint on this port
   port: 8080
+  
+  # CORS origins - which domains can access the API from browsers
+  # ["*"] = Allow all origins (convenient but less secure)
+  # ["https://your-domain.com"] = Restrict to specific domains
+  # [] = Disable CORS (API-only access)
   cors_origins: ["*"]
+  
+  # Enable FastAPI's automatic API documentation
+  # true = Access interactive docs at /docs and /redoc
+  # false = Disable documentation endpoints (recommended for production)
   enable_docs: true
+  
+  # Debug mode - NEVER enable in production
+  # true = Show detailed error messages
+  # false = Hide internal details from responses
   debug: false
 
-# Database configuration
+# Database Configuration - SQLite storage for call metadata
 database:
+  # Path to SQLite database file
+  # Directory will be created if it doesn't exist
   path: "data/rdio_calls.db"
-  enable_wal: true
-
-# Security configuration
-security:
-  # API keys for authentication (optional)
-  # If no keys are configured, all requests are allowed
-  api_keys: []
-    # - key: "your-api-key-here"
-    #   description: "Main SDRTrunk instance"
-    #   allowed_ips: []  # Empty = all IPs allowed
-    #   allowed_systems: []  # Empty = all systems allowed
   
-  # Rate limiting
+  # Enable Write-Ahead Logging for better concurrent performance
+  # Recommended for production use
+  enable_wal: true
+  
+  # Connection pool settings
+  pool_size: 5       # Number of persistent connections
+  max_overflow: 10   # Additional connections when needed
+
+# Security Configuration
+security:
+  # API keys for authentication
+  # If list is empty, authentication is disabled (all uploads accepted)
+  api_keys: []
+    # Example API key configuration:
+    # - key: "your-secure-api-key-here"
+    #   description: "Main SDRTrunk instance"
+    #   allowed_ips: []           # Empty = all IPs allowed
+    #   allowed_systems: []       # Empty = all systems allowed
+    #
+    # Restricted example:
+    # - key: "site-2-api-key"
+    #   description: "Remote site #2"
+    #   allowed_ips: ["192.168.1.100", "10.0.0.0/8"]  # Specific IPs or CIDR
+    #   allowed_systems: ["1", "2"]                     # Only these system IDs
+  
+  # Rate limiting per IP address
   rate_limit:
     enabled: true
-    max_requests_per_minute: 60
-    max_requests_per_hour: 1000
-    max_requests_per_day: 10000
+    max_requests_per_minute: 60      # ~1 upload per second
+    max_requests_per_hour: 1000      # Sustained rate
+    max_requests_per_day: 10000      # Daily maximum
 
-# File handling configuration
+# File Handling Configuration
 file_handling:
-  accepted_formats: [".mp3", ".wav", ".m4a"]
-  max_file_size_mb: 100
-  min_file_size_kb: 1
+  # Accepted audio formats - SDRTrunk sends MP3 files
+  # Only include formats you need (mp3 is standard for RdioScanner)
+  accepted_formats: [".mp3"]
+  
+  # File size limits
+  max_file_size_mb: 100    # Maximum (prevent abuse)
+  min_file_size_kb: 1      # Minimum (catch corrupt files)
+  
+  # Temporary upload directory
   temp_directory: "data/temp"
   
+  # Storage configuration
   storage:
-    strategy: "filesystem"  # Options: discard, filesystem, database
+    # Storage strategy:
+    # "discard" = Don't store audio files (metadata only)
+    # "filesystem" = Store files on disk (default)
+    # "database" = Store in database (not recommended)
+    strategy: "filesystem"
+    
+    # Storage directory (filesystem strategy only)
     directory: "data/audio"
+    
+    # Organize by date - creates YYYY/MM/DD subdirectories
     organize_by_date: true
-    retention_days: 30  # 0 = keep forever
+    
+    # Retention in days (0 = keep forever)
+    retention_days: 30
 
-# Processing configuration
+# Processing Configuration
 processing:
-  mode: "store"  # Options: log_only, store, process
+  # Processing mode:
+  # "log_only" = Only log metadata, discard audio
+  # "store" = Store both audio and metadata (default)
+  # "process" = Future: additional processing
+  mode: "store"
+  
+  # Database fields to store (comment out unneeded fields)
   store_fields: [
-    "timestamp", "system", "frequency", "talkgroup", "source",
-    "systemLabel", "talkgroupLabel", "talkgroupGroup",
-    "patches", "talkerAlias"
+    "timestamp",         # Call timestamp
+    "system",           # System ID
+    "frequency",        # Frequency in Hz
+    "talkgroup",        # Talkgroup ID
+    "source",           # Source radio ID
+    "systemLabel",      # System name
+    "talkgroupLabel",   # Talkgroup name
+    "talkgroupGroup",   # Talkgroup category
+    "talkerAlias",      # Radio alias
+    "audio_filename",   # Stored filename
+    "audio_size",       # File size
+    "upload_ip",        # Uploader IP
+    "upload_timestamp", # Upload time
   ]
 
-# Monitoring configuration
+# Monitoring Configuration
 monitoring:
+  # Health check endpoint
   health_check:
     enabled: true
-    path: "/health"
+    path: "/health"     # Returns 200 when healthy
   
+  # Metrics endpoint
   metrics:
     enabled: true
-    path: "/metrics"
+    path: "/metrics"    # Returns JSON statistics
   
+  # Statistics tracking
   statistics:
     enabled: true
-    update_interval_minutes: 5
+    track_sources: true      # Track by upload IP
+    track_systems: true      # Track by system ID
+    track_talkgroups: true   # Track by talkgroup
 
-# Logging configuration
+# Logging Configuration
 logging:
-  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
-  format: "json"  # Options: json, text
+  # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  level: "INFO"
   
+  # Log format (Python logging format string)
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  
+  # File logging
   file:
     enabled: true
-    path: "data/logs/rdio_calls.log"
-    max_size_mb: 100
-    backup_count: 5
+    path: "logs/rdio_calls_api.log"
+    max_size_mb: 100     # Rotate at this size
+    backup_count: 5      # Keep this many backups
   
+  # Console logging
   console:
     enabled: true
-    colorize: true
+    colorize: true       # Color output (requires colorlog)
+
+# Minimal configuration example:
+# server:
+#   host: "0.0.0.0"
+#   port: 8080
+# database:
+#   path: "data/rdio_calls.db"
