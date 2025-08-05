@@ -87,7 +87,6 @@ jobs:
     
     - name: Run tests with coverage
       run: |
-        uv add --dev pytest-cov
         uv run pytest -v --tb=short --cov=src --cov-report=xml --cov-report=term-missing
     
     - name: Upload coverage to Codecov
@@ -137,7 +136,7 @@ jobs:
         uv run python cli.py test-db -c test-config.yaml
     
     - name: Test server startup (quick check)
-      timeout: 10s
+      timeout-minutes: 1
       run: |
         # Start server in background and test it responds
         uv run python cli.py serve -c test-config.yaml --host 127.0.0.1 --port 8899 &
@@ -167,12 +166,10 @@ jobs:
     
     - name: Run safety check
       run: |
-        uv add --dev safety
         uv run safety check --json --output safety-report.json || true
     
     - name: Run bandit security linter
       run: |
-        uv add --dev bandit
         uv run bandit -r src -f json -o bandit-report.json || true
     
     - name: Upload security reports
@@ -206,9 +203,9 @@ jobs:
         uv tree
         
         # Export requirements for vulnerability scanning
-        uv export --format requirements-txt --output-file requirements.txt
-        echo "Generated requirements.txt:"
-        cat requirements.txt
+        uv pip compile pyproject.toml -o requirements.txt || echo "uv pip compile not available"
+        echo "Dependencies:"
+        uv pip list || uv tree
 
   # Performance Test
   performance:
@@ -287,7 +284,6 @@ jobs:
     
     - name: Check package
       run: |
-        uv add --dev twine
         uv run twine check dist/*
     
     - name: Upload build artifacts
