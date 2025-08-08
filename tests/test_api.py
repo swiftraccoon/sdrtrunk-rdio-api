@@ -181,10 +181,10 @@ class TestRdioScannerAPI:
                 files={"audio": ("large.mp3", f, "audio/mpeg")},
             )
 
-        assert response.status_code == 400
+        assert response.status_code == 413  # Payload Too Large
         data = response.json()
         assert "detail" in data
-        assert "too large" in data["detail"]
+        assert "large" in data["detail"].lower()
 
     def test_upload_file_too_small(
         self, test_client_with_storage: TestClient, temp_dir: Path
@@ -209,3 +209,83 @@ class TestRdioScannerAPI:
         data = response.json()
         assert "detail" in data
         assert "too small" in data["detail"]
+
+    def test_upload_with_all_optional_fields(
+        self, test_client: TestClient, temp_audio_file: Path
+    ) -> None:
+        """Test upload with all optional fields populated."""
+        with open(temp_audio_file, "rb") as f:
+            response = test_client.post(
+                "/api/call-upload",
+                data={
+                    "key": "test-key",
+                    "system": "123",
+                    "dateTime": "1234567890",
+                    "talkgroup": "100",
+                    "source": "200",
+                    "frequency": "854037500",
+                    "systemLabel": "Test System",
+                    "talkgroupLabel": "Test TG",
+                    "talkgroupGroup": "Group A",
+                    "talkgroupTag": "Police",
+                    "talkerAlias": "Unit 1",
+                    "patches": "1,2,3",
+                    "frequencies": "854037500,854037600",
+                    "sources": "200,201",
+                },
+                files={"audio": ("test.mp3", f, "audio/mpeg")},
+            )
+
+        assert response.status_code == 200
+
+    def test_upload_with_json_array_patches(
+        self, test_client: TestClient, temp_audio_file: Path
+    ) -> None:
+        """Test upload with patches field in JSON array format (from SDRTrunk)."""
+        with open(temp_audio_file, "rb") as f:
+            response = test_client.post(
+                "/api/call-upload",
+                data={
+                    "key": "test-key",
+                    "system": "123",
+                    "dateTime": "1234567890",
+                    "talkgroup": "100",
+                    "source": "200",
+                    "frequency": "854037500",
+                    "patches": "[52198,52199]",  # JSON array format from SDRTrunk
+                },
+                files={"audio": ("test.mp3", f, "audio/mpeg")},
+            )
+
+        assert response.status_code == 200
+        assert response.text == "Call imported successfully."
+
+    def test_upload_invalid_integer_fields(self, test_client: TestClient) -> None:
+        """Test upload with invalid integer values."""
+        response = test_client.post(
+            "/api/call-upload",
+            data={
+                "key": "test-key",
+                "system": "123",
+                "dateTime": "not_a_number",
+                "talkgroup": "abc",
+            },
+        )
+        assert response.status_code in [400, 500]
+
+    def test_get_client_info_with_forwarded_for(self, test_client: TestClient) -> None:
+        """Test client info extraction with X-Forwarded-For header."""
+        response = test_client.post(
+            "/api/call-upload",
+            headers={
+                "X-Forwarded-For": "192.168.1.100, 10.0.0.1",
+                "User-Agent": "TestAgent/1.0",
+            },
+            data={
+                "key": "test-key",
+                "system": "123",
+                "dateTime": "1234567890",
+                "talkgroup": "100",
+            },
+        )
+        assert response.status_code == 200

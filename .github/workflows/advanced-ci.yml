@@ -164,13 +164,17 @@ jobs:
     - name: Install dependencies
       run: uv sync --all-extras --dev
     
-    - name: Run safety check
+    - name: Run safety vulnerability check
       run: |
-        uv run safety check --json --output safety-report.json || true
+        # Export dependencies and check for vulnerabilities
+        uv pip list --format=freeze > requirements.txt
+        uv run pip-audit -r requirements.txt --format json -o pip-audit-report.json
     
     - name: Run bandit security linter
       run: |
-        uv run bandit -r src -f json -o bandit-report.json || true
+        uv run bandit -r src -f json -o bandit-report.json
+        # Also run with human-readable output for the logs
+        uv run bandit -r src -ll
     
     - name: Upload security reports
       uses: actions/upload-artifact@v4

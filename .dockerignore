@@ -1,0 +1,65 @@
+# Git
+.git/
+.gitignore
+.github/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+.DS_Store
+
+# Data and logs (will be created in container)
+data/
+logs/
+*.log
+*.db
+*.sqlite
+
+# Config (use example)
+config.yaml
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Testing
+tests/
+test_*.py
+*_test.py
+
+# CI/CD
+.github/
+Makefile
+.pre-commit-config.yaml
+
+# Misc
+.env
+.env.*
+*.bak
+*.tmp
+temp/

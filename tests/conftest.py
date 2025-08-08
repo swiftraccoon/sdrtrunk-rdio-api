@@ -12,6 +12,8 @@ from fastapi.testclient import TestClient
 from src.api.app import create_app
 from src.config import Config
 from src.database.connection import DatabaseManager
+from src.database.operations import DatabaseOperations
+from src.utils.file_handler import FileHandler
 
 
 @pytest.fixture
@@ -174,3 +176,22 @@ def test_client_with_storage(
 def db_manager(test_config: Config) -> DatabaseManager:
     """Create test database manager."""
     return DatabaseManager(test_config.database)
+
+
+@pytest.fixture
+def file_handler(test_config: Config) -> FileHandler:
+    """Create test file handler."""
+    return FileHandler(
+        storage_directory=test_config.file_handling.storage.directory,
+        temp_directory=test_config.file_handling.temp_directory,
+        organize_by_date=test_config.file_handling.storage.organize_by_date,
+        accepted_formats=test_config.file_handling.accepted_formats,
+        max_file_size_mb=test_config.file_handling.max_file_size_mb,
+        min_file_size_kb=test_config.file_handling.min_file_size_kb,
+    )
+
+
+@pytest.fixture
+def db_ops(db_manager: DatabaseManager) -> DatabaseOperations:
+    """Create test database operations."""
+    return DatabaseOperations(db_manager)

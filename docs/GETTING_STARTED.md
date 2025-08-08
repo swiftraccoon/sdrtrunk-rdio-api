@@ -5,6 +5,7 @@ This guide will walk you through setting up RdioCallsAPI step-by-step, even if y
 ## What You Need
 
 Before starting, make sure you have:
+
 - A computer running Windows, Mac, or Linux
 - SDRTrunk already working with your radio setup
 - About 15 minutes to set everything up
@@ -16,7 +17,8 @@ Before starting, make sure you have:
 RdioCallsAPI needs Python 3.13 to run.
 
 **On Windows:**
-1. Go to https://www.python.org/downloads/
+
+1. Go to <https://www.python.org/downloads/>
 2. Click "Download Python 3.13.x"
 3. Run the installer
 4. **IMPORTANT**: Check the box "Add Python to PATH"
@@ -24,6 +26,7 @@ RdioCallsAPI needs Python 3.13 to run.
 
 **On Mac:**
 If you have Homebrew installed:
+
 ```bash
 brew install python@3.13
 ```
@@ -31,6 +34,7 @@ brew install python@3.13
 If you don't have Homebrew, download from python.org like Windows.
 
 **On Linux (Ubuntu/Debian):**
+
 ```bash
 sudo apt update
 sudo apt install python3.13 python3.13-venv git
@@ -42,8 +46,8 @@ Open Terminal (Mac/Linux) or Command Prompt (Windows) and run:
 
 ```bash
 # Download the code
-git clone https://github.com/your-username/rdioCallsAPI.git
-cd rdioCallsAPI
+git clone https://github.com/swiftraccoon/sdrtrunk-rdio-api.git
+cd sdrtrunk-rdio-api
 ```
 
 ### Step 3: Install the uv Package Manager
@@ -56,11 +60,13 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 **On Windows (if the above doesn't work):**
+
 ```powershell
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
 Close your terminal and open a new one, then run:
+
 ```bash
 uv --version
 ```
@@ -107,6 +113,7 @@ uv run python cli.py serve
 ```
 
 You should see:
+
 ```
 🚀 Starting RdioCallsAPI Server
 ├─ Address: http://0.0.0.0:8080
@@ -126,9 +133,11 @@ Great! Your server is running. Keep this window open and open a new terminal/com
 ### Step 8: Test the Web Interface
 
 Open your web browser and go to:
-- http://localhost:8080/health
+
+- <http://localhost:8080/health>
 
 You should see something like:
+
 ```json
 {
   "status": "healthy",
@@ -164,6 +173,7 @@ Now we need to tell SDRTrunk to send audio files to your server:
 ### Step 11: Verify It's Working
 
 In your second terminal window, run:
+
 ```bash
 uv run python cli.py stats --last 5
 ```
@@ -173,6 +183,7 @@ If everything is working, you'll see recent calls listed. If not, see the troubl
 ## What Happens Now?
 
 When SDRTrunk receives radio transmissions:
+
 1. SDRTrunk records the audio as an MP3 file
 2. SDRTrunk sends the MP3 and information to your RdioCallsAPI server
 3. Your server saves the MP3 file in `data/audio/`
@@ -182,6 +193,7 @@ When SDRTrunk receives radio transmissions:
 ## File Organization
 
 Your audio files will be organized like this:
+
 ```
 data/audio/
 ├── 2025/
@@ -215,9 +227,10 @@ uv run python cli.py serve --log-level DEBUG
 ## Web Interface
 
 Once your server is running, you can view:
-- **Server health**: http://localhost:8080/health
-- **Usage statistics**: http://localhost:8080/metrics
-- **API documentation**: http://localhost:8080/docs
+
+- **Server health**: <http://localhost:8080/health>
+- **Usage statistics**: <http://localhost:8080/metrics>
+- **API documentation**: <http://localhost:8080/docs>
 
 ## Stopping the Server
 
@@ -226,27 +239,32 @@ To stop the server, go back to the terminal where it's running and press `Ctrl+C
 ## Troubleshooting
 
 ### "Command not found" errors
+
 - Make sure Python is installed and in your PATH
 - Make sure uv is installed (`uv --version` should work)
 - Try closing and reopening your terminal
 
 ### "Connection refused" when testing SDRTrunk
+
 - Make sure the server is running (you should see the startup message)
 - Check that the port number matches (8080 by default)
 - If SDRTrunk is on a different computer, use that computer's IP address instead of "localhost"
 
 ### "Invalid API key" errors
+
 - Make sure the API key in SDRTrunk exactly matches what's in your config.yaml
 - Make sure there are no extra spaces or quotes
 - Restart the server after changing config.yaml
 
 ### No calls showing up
+
 - Check that SDRTrunk is actually receiving radio traffic
 - Make sure the streaming is enabled in SDRTrunk (green indicator)
 - Check the server logs for error messages
 - Try running with debug logging: `uv run python cli.py serve --log-level DEBUG`
 
 ### Server won't start
+
 - Check that no other program is using port 8080
 - Try a different port: `uv run python cli.py serve --port 8081`
 - Check that your config.yaml file is valid YAML (proper indentation)
@@ -254,6 +272,7 @@ To stop the server, go back to the terminal where it's running and press `Ctrl+C
 ## Next Steps
 
 Once everything is working:
+
 1. Consider setting up the server to start automatically (see the main README)
 2. Set up file cleanup to manage disk space (`uv run python cli.py clean --help`)
 3. Explore the statistics and export features
@@ -262,6 +281,7 @@ Once everything is working:
 ## Getting Help
 
 If you're still having trouble:
+
 1. Check the main [README.md](../README.md) for more detailed information
 2. Check the [API documentation](API.md) for technical details
 3. Look at your log files in the `logs/` directory

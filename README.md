@@ -5,15 +5,17 @@ A simple, easy-to-use API server that receives radio call recordings from SDRTru
 ## What Does This Do?
 
 If you're using SDRTrunk to record radio communications, this server will:
-- ✅ Receive audio files from SDRTrunk automatically
-- ✅ Store them organized by date and system
-- ✅ Keep track of all the details (frequency, talkgroup, etc.)
-- ✅ Provide a web interface to see statistics
-- ✅ Work with any scanner or radio system SDRTrunk supports
+
+- Receive audio files from SDRTrunk automatically
+- Store them organized by date and system
+- Keep track of all the details (frequency, talkgroup, etc.)
+- Provide a web interface to see statistics
+- Work with any scanner or radio system SDRTrunk supports
 
 ## Requirements
 
 Before you start, you need:
+
 - **Python 3.13** installed on your computer
 - **SDRTrunk** set up and working with your radio system
 - **Basic command line knowledge** (we'll guide you through it)
@@ -21,17 +23,20 @@ Before you start, you need:
 ### Installing Python 3.13
 
 **Windows:**
+
 1. Go to [python.org/downloads](https://www.python.org/downloads/)
 2. Download Python 3.13
 3. Run the installer and check "Add Python to PATH"
 
 **Mac:**
+
 ```bash
 # Using Homebrew (install Homebrew first if you don't have it)
 brew install python@3.13
 ```
 
 **Linux (Ubuntu/Debian):**
+
 ```bash
 sudo apt update
 sudo apt install python3.13 python3.13-venv
@@ -39,7 +44,7 @@ sudo apt install python3.13 python3.13-venv
 
 ## Quick Setup (5 minutes)
 
-> 📖 **New to servers or command lines?** Check out our detailed [Getting Started Guide](docs/GETTING_STARTED.md) for step-by-step instructions with screenshots.
+> 💡 **First time?** Just copy and paste these commands into Terminal (Mac/Linux) or Command Prompt (Windows).
 
 ### Step 1: Get the Code
 
@@ -56,17 +61,20 @@ cd sdrtrunk-rdio-api
 We use a tool called `uv` to manage dependencies. Install it:
 
 **Windows/Mac/Linux:**
+
 ```bash
 # Install uv package manager
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 **Windows (alternative using PowerShell):**
+
 ```powershell
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
 Then install the project dependencies:
+
 ```bash
 uv sync
 ```
@@ -74,29 +82,22 @@ uv sync
 ### Step 3: Create Your Configuration
 
 ```bash
-# Generate a config file with examples
-uv run python cli.py init
-
-# Copy it to the main config file
+# Copy the example config
 cp config.example.yaml config.yaml
 ```
 
-### Step 4: Edit Your Configuration
+### Step 4: Set Your API Key
 
-Open `config.yaml` in any text editor and change these important settings:
+Open `config.yaml` in any text editor (Notepad, TextEdit, etc.) and change this line:
 
 ```yaml
-# Basic server settings
-server:
-  host: "0.0.0.0"        # Listen on all network interfaces
-  port: 8080             # Port number (change if needed)
-
-# Security (IMPORTANT: Change this!)
 security:
   api_keys:
-    - key: "change-this-to-something-secret"
+    - key: "change-me-to-something-secret"  # ⚠️ CHANGE THIS!
       description: "My SDRTrunk"
 ```
+
+Pick any password you want - just remember it for SDRTrunk!
 
 ### Step 5: Start the Server
 
@@ -105,15 +106,10 @@ uv run python cli.py serve
 ```
 
 You should see:
+
 ```
 🚀 Starting RdioCallsAPI Server
 ├─ Address: http://0.0.0.0:8080
-├─ HTTP/2: Enabled (required for SDRTrunk)
-├─ Processing Mode: store
-├─ Debug Mode: False
-├─ API Docs: http://0.0.0.0:8080/docs
-├─ Database: data/rdio_calls.db
-├─ Audio Storage: data/audio
 └─ API Keys: 1 configured
 
 Press Ctrl+C to stop the server
@@ -121,84 +117,38 @@ Press Ctrl+C to stop the server
 
 ### Step 6: Configure SDRTrunk
 
-1. **Open SDRTrunk**
-2. **Go to the Playlist Editor**
-3. **Click the "Streaming" tab**
-4. **Add a new stream:**
-   - Type: `RdioScanner`
-   - Host: `your-server-ip` (use `localhost` if on same computer)
-   - Port: `8080` (or whatever you configured)
-   - API Key: `change-this-to-something-secret` (whatever you put in config.yaml)
-   - System ID: `1` (or your system number)
-
-5. **Click "Test"** to verify it's working
-6. **Save and start your playlist**
+1. Open SDRTrunk → Playlist Editor → Streaming tab
+2. Add new stream:
+   - **Type:** `RdioScanner`
+   - **Host:** `localhost` (or your computer's IP address)
+   - **Port:** `8080`
+   - **API Key:** *(the password you set in config.yaml)*
+   - **System ID:** `1`
+3. Click "Test" - you should see "Test successful!"
+4. Save and start your playlist
 
 ## Verifying It's Working
 
-### Check the Web Interface
+Open your web browser and go to: `http://localhost:8080/health`
 
-Open your web browser and go to:
-- **Health Check**: `http://localhost:8080/health`
-- **Statistics**: `http://localhost:8080/metrics`
-- **API Documentation**: `http://localhost:8080/docs`
+You should see "healthy" - that means it's working!
 
-### Check Your Files
+Your recordings will be saved in the `data/audio/` folder.
 
-Audio files will be stored in:
-```
-data/audio/2025/01/15/1/20250115_143022_TG100.mp3
-```
-
-### View Recent Calls
-
-```bash
-# See the last 10 calls received
-uv run python cli.py stats --last 10
-
-# See calls from the last 24 hours
-uv run python cli.py stats --hours 24
-```
-
-## Common Commands
-
-### Starting and Stopping
+## Useful Commands
 
 ```bash
 # Start the server
 uv run python cli.py serve
 
-# Start with debug logging
-uv run python cli.py serve --log-level DEBUG
-
-# Start on a different port
-uv run python cli.py serve --port 9000
-```
-
-### Managing Data
-
-```bash
-# View recent activity
+# See recent calls
 uv run python cli.py stats
 
-# Test database connection
-uv run python cli.py test-db
-
-# Clean up old files (older than 30 days)
+# Clean up old files (30+ days)
 uv run python cli.py clean --days 30
 
-# Export data to CSV file
-uv run python cli.py export -o my_calls.csv
-```
-
-### Getting Help
-
-```bash
-# See all available commands
+# Get help
 uv run python cli.py --help
-
-# Get help for a specific command
-uv run python cli.py serve --help
 ```
 
 ## Configuration Options
@@ -270,6 +220,7 @@ security:
 ### Getting More Help
 
 1. **Enable debug logging**:
+
    ```yaml
    logging:
      level: "DEBUG"
@@ -307,6 +258,7 @@ WantedBy=multi-user.target
 ```
 
 Then:
+
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable rdiocalls
@@ -316,6 +268,7 @@ sudo systemctl start rdiocalls
 ### Running Behind a Reverse Proxy
 
 If you're using nginx or Apache, the server works great behind a proxy. Just make sure to:
+
 1. Forward the correct headers
 2. Set appropriate timeouts for file uploads
 3. Configure SSL/TLS termination at the proxy level
@@ -338,11 +291,13 @@ security:
 ## What Gets Stored
 
 ### Audio Files
+
 - **Location**: `data/audio/YYYY/MM/DD/SYSTEM/`
 - **Format**: MP3 files from SDRTrunk
 - **Naming**: `YYYYMMDD_HHMMSS_TG{talkgroup}.mp3`
 
 ### Database Information
+
 - Call timestamp and duration
 - System and talkgroup information
 - Frequency and source radio
@@ -350,6 +305,7 @@ security:
 - Upload source and API key used
 
 ### Log Files
+
 - **Location**: `logs/rdio_calls_api.log`
 - **Contains**: All server activity and errors
 - **Rotation**: Automatic when files get too large
@@ -359,6 +315,7 @@ security:
 See the full API documentation at: [docs/API.md](docs/API.md)
 
 Quick reference:
+
 - **Upload**: `POST /api/call-upload` (used by SDRTrunk)
 - **Health**: `GET /health` (check if server is working)
 - **Stats**: `GET /metrics` (see activity statistics)
@@ -367,6 +324,7 @@ Quick reference:
 ## Support
 
 If you need help:
+
 1. Check this README first
 2. Look at the troubleshooting section
 3. Check the [API documentation](docs/API.md)
@@ -376,4 +334,3 @@ If you need help:
    - Python version (`python3 --version`)
    - Error messages
    - Your config.yaml (remove any API keys!)
-

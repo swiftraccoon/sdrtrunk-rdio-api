@@ -1,19 +1,23 @@
 """Database connection management for SQLite."""
 
 import logging
+import threading
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 from sqlalchemy import Engine, create_engine, event, text
-from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.orm import Session, scoped_session, sessionmaker
+from sqlalchemy.pool import NullPool
 
 from ..config import DatabaseConfig
 from ..models.database_models import Base
 
 logger = logging.getLogger(__name__)
+
+# Global lock for database initialization
+_db_init_lock = threading.Lock()
 
 
 class DatabaseManager:
@@ -50,8 +54,9 @@ class DatabaseManager:
         # Create engine with connection pooling
         self.engine = self._create_engine()
 
-        # Create session factory
-        self.Session = sessionmaker(bind=self.engine)
+        # Create thread-safe session factory using scoped_session
+        session_factory = sessionmaker(bind=self.engine)
+        self.Session = scoped_session(session_factory)
 
         # Initialize database
         self._init_database()
@@ -63,16 +68,18 @@ class DatabaseManager:
         # SQLite connection string
         connection_string = f"sqlite:///{self.database_path}"
 
-        # Create engine with connection pooling
-        # Use StaticPool to maintain persistent connections
+        # Create engine with connection pooling optimized for concurrent access
+        # Use NullPool for better thread safety with SQLite
         engine = create_engine(
             connection_string,
             echo=self.echo,
-            poolclass=StaticPool,
+            poolclass=NullPool,  # Better for SQLite with threads
             connect_args={
                 "check_same_thread": False,  # Allow multiple threads
                 "timeout": 30,  # Connection timeout in seconds
+                "isolation_level": None,  # Use autocommit mode for better concurrency
             },
+            pool_pre_ping=True,  # Verify connections before using
         )
 
         # Configure SQLite for better performance
@@ -95,18 +102,25 @@ class DatabaseManager:
         return engine
 
     def _init_database(self) -> None:
-        """Initialize database schema."""
-        try:
-            # Create all tables
-            Base.metadata.create_all(self.engine)
-            logger.info("Database schema created/verified")
-        except Exception as e:
-            logger.error(f"Failed to initialize database: {e}")
-            raise
+        """Initialize database schema (thread-safe)."""
+        global _db_init_lock
+
+        # Use a global lock to ensure only one thread initializes the database
+        with _db_init_lock:
+            try:
+                # Create all tables if they don't exist
+                # Using create_all is idempotent - it won't recreate existing tables
+                Base.metadata.create_all(self.engine, checkfirst=True)
+                logger.info("Database schema created/verified")
+            except Exception as e:
+                logger.error(f"Failed to initialize database: {e}")
+                raise
 
     @contextmanager
     def get_session(self) -> Generator[Session]:
         """Get a database session with automatic cleanup.
+
+        Thread-safe: Each thread gets its own session from the scoped_session.
 
         Usage:
             with db_manager.get_session() as session:
@@ -114,17 +128,28 @@ class DatabaseManager:
                 session.add(record)
                 session.commit()
         """
+        # Get thread-local session from scoped_session
         session = self.Session()
         try:
             yield session
+            # Auto-commit if there are pending changes and no explicit commit was called
+            if session.new or session.dirty or session.deleted:
+                session.commit()
         except Exception:
             session.rollback()
             raise
         finally:
+            # Close this thread's session
             session.close()
+            # Remove the session from the scoped_session registry
+            # This is critical for thread safety - ensures each thread gets a fresh session
+            self.Session.remove()
 
     def close(self) -> None:
         """Close database connections."""
+        # Remove scoped session registry
+        self.Session.remove()
+        # Dispose of the engine
         self.engine.dispose()
         logger.info("Database connections closed")
 

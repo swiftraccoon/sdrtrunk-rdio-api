@@ -1,0 +1,68 @@
+name: Question
+description: Ask a question about RdioCallsAPI
+title: "[QUESTION] "
+labels: ["question", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have a question about RdioCallsAPI? We're here to help!
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your Question
+      description: What would you like to know?
+      placeholder: |
+        How do I...
+        What's the best way to...
+        Can RdioCallsAPI...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Question Category
+      description: What area does your question relate to?
+      options:
+        - Installation/Setup
+        - Configuration
+        - API Usage
+        - Integration with SDRTrunk
+        - Performance/Scaling
+        - Security
+        - Development/Contributing
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Provide any relevant context or what you've already tried
+      placeholder: |
+        I'm trying to achieve...
+        I've already looked at...
+        My use case is...
+
+  - type: textarea
+    id: research
+    attributes:
+      label: What I've Tried
+      description: What documentation or resources have you already checked?
+      placeholder: |
+        - Checked the README
+        - Looked at config.example.yaml
+        - Searched existing issues
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I have searched the documentation
+          required: true
+        - label: I have searched existing issues and discussions
+          required: true

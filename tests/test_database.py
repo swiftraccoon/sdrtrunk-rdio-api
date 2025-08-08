@@ -224,3 +224,111 @@ class TestDatabaseOperations:
 
             assert old_call is None
             assert new_call is not None
+
+    def test_query_calls_with_all_filters(self, db_manager: DatabaseManager) -> None:
+        """Test query calls with all filter options."""
+        db_ops = DatabaseOperations(db_manager)
+
+        # Add test data
+        upload = RdioScannerUpload(
+            key="test",
+            system="1",
+            dateTime=int(datetime.now().timestamp()),
+            talkgroup=100,
+            source=200,
+            frequency=850000000,
+        )
+        db_ops.save_radio_call(upload)
+
+        # Query with all filters
+        result = db_ops.query_calls(
+            filters={
+                "system_id": "1",
+                "talkgroup_id": 100,
+                "source_radio_id": 200,
+                "frequency": 850000000,
+                "date_from": datetime.now() - timedelta(hours=1),
+                "date_to": datetime.now() + timedelta(hours=1),
+            },
+            sort_by="frequency",
+            sort_order="asc",
+        )
+
+        assert result["total"] == 1
+        assert result["calls"][0]["system_id"] == "1"
+
+    def test_get_systems_summary(self, db_manager: DatabaseManager) -> None:
+        """Test getting systems summary."""
+        db_ops = DatabaseOperations(db_manager)
+
+        # Add test data for multiple systems
+        for system in ["1", "2", "3"]:
+            for i in range(3):
+                upload = RdioScannerUpload(
+                    key="test",
+                    system=system,
+                    dateTime=int(datetime.now().timestamp()),
+                    talkgroup=100 + i,
+                    systemLabel=f"System {system}",
+                )
+                db_ops.save_radio_call(upload)
+
+        # Get systems summary
+        summary = db_ops.get_systems_summary()
+
+        assert len(summary) == 3
+        for sys in summary:
+            assert sys["total_calls"] == 3
+            assert "top_talkgroups" in sys
+
+    def test_get_talkgroups_summary(self, db_manager: DatabaseManager) -> None:
+        """Test getting talkgroups summary."""
+        db_ops = DatabaseOperations(db_manager)
+
+        # Add test data
+        for _ in range(5):
+            upload = RdioScannerUpload(
+                key="test",
+                system="1",
+                dateTime=int(datetime.now().timestamp()),
+                talkgroup=100,
+                talkgroupLabel="Test TG",
+            )
+            db_ops.save_radio_call(upload)
+
+        # Get talkgroups summary
+        summary = db_ops.get_talkgroups_summary(min_calls=3)
+
+        # Should have at least one talkgroup with 5 calls
+        assert any(tg["total_calls"] >= 5 for tg in summary)
+
+    def test_database_vacuum(self, db_manager: DatabaseManager) -> None:
+        """Test database vacuum operation."""
+        # Should not raise
+        db_manager.vacuum()
+
+        # Database should still be functional
+        db_ops = DatabaseOperations(db_manager)
+        stats = db_ops.get_statistics()
+        assert isinstance(stats, dict)
+
+    def test_get_call_by_id(self, db_manager: DatabaseManager) -> None:
+        """Test retrieving specific call by ID."""
+        db_ops = DatabaseOperations(db_manager)
+
+        # Add a test call
+        upload = RdioScannerUpload(
+            key="test",
+            system="1",
+            dateTime=int(datetime.now().timestamp()),
+            talkgroup=123,
+        )
+        call_id = db_ops.save_radio_call(upload)
+
+        # Retrieve it
+        call = db_ops.get_call_by_id(call_id)
+        assert call is not None
+        assert call["id"] == call_id
+
+        # Non-existent ID
+        assert db_ops.get_call_by_id(99999) is None

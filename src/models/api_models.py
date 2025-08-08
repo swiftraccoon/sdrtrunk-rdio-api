@@ -1,8 +1,9 @@
 """API request and response models for RdioScanner protocol."""
 
+import re
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class RdioScannerUpload(BaseModel):
@@ -50,6 +51,117 @@ class RdioScannerUpload(BaseModel):
 
     # Allow extra fields that might be sent by different SDRTrunk versions
     model_config = ConfigDict(extra="allow")
+
+    # Validators for enhanced input validation
+    @field_validator("system")
+    @classmethod
+    def validate_system_id(cls, v: str) -> str:
+        """Validate system ID is numeric and reasonable length."""
+        if not v:
+            raise ValueError("System ID cannot be empty")
+        if not v.isdigit():
+            raise ValueError("System ID must be numeric")
+        if len(v) > 10:
+            raise ValueError("System ID too long (max 10 digits)")
+        return v
+
+    @field_validator("dateTime")
+    @classmethod
+    def validate_timestamp(cls, v: int) -> int:
+        """Validate timestamp is reasonable."""
+        if v < 0:
+            raise ValueError("Timestamp cannot be negative")
+        # Check if timestamp is within reasonable range (not before 2000, not too far in future)
+        current_time = int(datetime.now().timestamp())
+        min_time = int(
+            datetime(2000, 1, 1).timestamp()
+        )  # Allow older timestamps for testing
+        max_time = current_time + (86400 * 365)  # Allow up to 1 year in future
+
+        if v < min_time:
+            raise ValueError(f"Timestamp too old (before 2000): {v}")
+        if v > max_time:
+            raise ValueError(f"Timestamp too far in future: {v}")
+        return v
+
+    @field_validator("frequency")
+    @classmethod
+    def validate_frequency(cls, v: int | None) -> int | None:
+        """Validate frequency is within reasonable range."""
+        if v is None:
+            return v
+        if v <= 0:
+            raise ValueError("Frequency must be positive")
+        # Reasonable frequency range: 25 MHz to 6 GHz
+        if v < 25_000_000 or v > 6_000_000_000:
+            raise ValueError(f"Frequency out of reasonable range: {v} Hz")
+        return v
+
+    @field_validator("talkgroup", "source")
+    @classmethod
+    def validate_radio_id(cls, v: int | None) -> int | None:
+        """Validate radio IDs are reasonable."""
+        if v is None:
+            return v
+        if v < 0:
+            raise ValueError("Radio ID cannot be negative")
+        if v > 999_999_999:  # Max reasonable ID
+            raise ValueError(f"Radio ID too large: {v}")
+        return v
+
+    @field_validator(
+        "systemLabel", "talkgroupLabel", "talkgroupGroup", "talkerAlias", "talkgroupTag"
+    )
+    @classmethod
+    def validate_labels(cls, v: str | None) -> str | None:
+        """Validate and sanitize label strings."""
+        if v is None:
+            return v
+        # Remove any control characters
+        v = re.sub(r"[\x00-\x1f\x7f-\x9f]", "", v)
+        # Limit length
+        if len(v) > 255:
+            v = v[:255]
+        return v.strip()
+
+    @field_validator("patches", "frequencies", "sources")
+    @classmethod
+    def validate_comma_separated(cls, v: str | None) -> str | None:
+        """Validate comma-separated lists."""
+        if v is None:
+            return v
+        # Handle empty array notation from SDRTrunk
+        if v == "[]":
+            return None
+        # Handle JSON array format from SDRTrunk (e.g., "[52198,52199]")
+        if v.startswith("[") and v.endswith("]"):
+            # Remove brackets and spaces
+            v = v[1:-1].replace(" ", "")
+            # If empty after removing brackets, return None
+            if v == "":
+                return None
+        else:
+            # Remove spaces for regular comma-separated format
+            v = v.replace(" ", "")
+        # Allow empty string
+        if v == "":
+            return None
+        if not re.match(r"^[\d,]+$", v):
+            raise ValueError(f"Invalid comma-separated list format: {v}")
+        return v
+
+    @field_validator("audio_size")
+    @classmethod
+    def validate_audio_size(cls, v: int | None) -> int | None:
+        """Validate audio file size."""
+        if v is None:
+            return v
+        if v <= 0:
+            raise ValueError("Audio size must be positive")
+        # Max 100MB
+        if v > 100 * 1024 * 1024:
+            raise ValueError(f"Audio file too large: {v} bytes")
+        return v
 
 
 class CallUploadResponse(BaseModel):

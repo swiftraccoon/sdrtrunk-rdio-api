@@ -4,8 +4,65 @@ from pathlib import Path
 
 import pytest
 
+from src.exceptions import (
+    ConfigurationError,
+    DatabaseError,
+    FileSizeError,
+    InvalidAPIKeyError,
+    InvalidAudioFormatError,
+    InvalidSystemIDError,
+    RateLimitExceededError,
+    RdioAPIException,
+)
 from src.utils.file_handler import FileHandler
 from src.utils.multipart_parser import parse_multipart_form
+
+
+class TestSanitizationFunctions:
+    """Test sanitization utility functions."""
+
+    def test_sanitize_filename(self):
+        """Test filename sanitization."""
+        from src.middleware.validation import sanitize_filename
+
+        # Test dangerous characters removal
+        assert sanitize_filename("test<>file.mp3") == "test__file.mp3"
+        assert sanitize_filename('test:"|?*file.mp3') == "test_____file.mp3"
+
+        # Test path traversal removal
+        assert sanitize_filename("../../etc/passwd") == "passwd"
+        assert sanitize_filename("/etc/passwd") == "passwd"
+
+        # Test control characters removal
+        assert sanitize_filename("test\x00file.mp3") == "testfile.mp3"
+        assert sanitize_filename("test\nfile.mp3") == "testfile.mp3"
+
+        # Test empty filename handling
+        assert sanitize_filename("") == "unnamed_file"
+        assert sanitize_filename("\x00\x01\x02") == "unnamed_file"
+
+        # Test long filename truncation
+        long_name = "a" * 300 + ".mp3"
+        result = sanitize_filename(long_name)
+        assert len(result) <= 255
+        assert result.endswith(".mp3")
+
+    def test_sanitize_string(self):
+        """Test string sanitization."""
+        from src.middleware.validation import sanitize_string
+
+        # Test control character removal
+        assert sanitize_string("test\x00string") == "teststring"
+        assert sanitize_string("test\nstring\r") == "teststring"
+
+        # Test length limiting
+        long_string = "a" * 300
+        result = sanitize_string(long_string, max_length=255)
+        assert len(result) == 255
+
+        # Test whitespace trimming
+        assert sanitize_string("  test  ") == "test"
+        assert sanitize_string("\t\ntest\r\n") == "test"
 
 
 class TestFileHandler:
@@ -252,3 +309,125 @@ class TestMultipartParser:
         assert "audio" in files
         assert files["audio"]["filename"] == "audio.mp3"
         assert files["audio"]["content"] == b"MP3_DATA_HERE"
+
+
+class TestConfig:
+    """Tests for configuration module."""
+
+    def test_config_from_dict(self):
+        """Test loading config from dictionary."""
+        from src.config import Config
+
+        config_dict = {
+            "server": {
+                "host": "127.0.0.1",
+                "port": 8080,
+                "cors_origins": ["*"],
+            },
+            "database": {
+                "path": "test.db",
+                "pool_size": 10,
+            },
+            "security": {
+                "api_keys": [],
+                "rate_limit": {
+                    "enabled": False,
+                },
+            },
+            "file_handling": {
+                "storage_directory": "/tmp/storage",
+                "temp_directory": "/tmp/temp",
+                "organize_by_date": True,
+                "accepted_formats": [".mp3"],
+                "max_file_size_mb": 50,
+            },
+            "processing": {
+                "mode": "store",
+            },
+        }
+
+        # Config uses Pydantic's built-in parsing
+        config = Config(**config_dict)
+        assert config.server.host == "127.0.0.1"
+        assert config.server.port == 8080
+        assert config.database.path == "test.db"
+        assert config.processing.mode == "store"
+
+    def test_config_reload(self):
+        """Test config structure."""
+        from src.config import Config
+
+        # Create initial config
+        config = Config()
+        assert config.server.host == "0.0.0.0"
+        assert config.database.path == "data/rdio_calls.db"
+
+    def test_config_defaults(self):
+        """Test config default values."""
+        from src.config import DatabaseConfig, SecurityConfig, ServerConfig
+
+        server = ServerConfig()
+        assert server.host == "0.0.0.0"
+        assert server.port == 8080
+        assert server.cors_origins == ["*"]
+
+        db = DatabaseConfig()
+        assert db.path == "data/rdio_calls.db"
+        assert db.pool_size == 5
+        assert db.enable_wal is True
+
+        security = SecurityConfig()
+        assert security.api_keys == []
+        assert security.rate_limit.enabled is True
+
+
+class TestExceptions:
+    """Tests for custom exceptions."""
+
+    def test_base_exception(self):
+        """Test base RdioAPIException."""
+        exc = RdioAPIException("Test error")
+        assert str(exc) == "Test error"
+        assert isinstance(exc, Exception)
+
+    def test_audio_format_error(self):
+        """Test InvalidAudioFormatError."""
+        exc = InvalidAudioFormatError("Invalid format")
+        assert str(exc) == "Invalid format"
+        assert isinstance(exc, RdioAPIException)
+
+    def test_rate_limit_error(self):
+        """Test RateLimitExceededError."""
+        exc = RateLimitExceededError("Rate limit exceeded")
+        assert str(exc) == "Rate limit exceeded"
+        assert isinstance(exc, RdioAPIException)
+
+    def test_api_key_error(self):
+        """Test InvalidAPIKeyError."""
+        exc = InvalidAPIKeyError("Invalid API key")
+        assert str(exc) == "Invalid API key"
+        assert isinstance(exc, RdioAPIException)
+
+    def test_system_id_error(self):
+        """Test InvalidSystemIDError."""
+        exc = InvalidSystemIDError("Invalid system ID")
+        assert str(exc) == "Invalid system ID"
+        assert isinstance(exc, RdioAPIException)
+
+    def test_file_size_error(self):
+        """Test FileSizeError."""
+        exc = FileSizeError("File too large")
+        assert str(exc) == "File too large"
+        assert isinstance(exc, RdioAPIException)
+
+    def test_database_error(self):
+        """Test DatabaseError."""
+        exc = DatabaseError("Database error")
+        assert str(exc) == "Database error"
+        assert isinstance(exc, RdioAPIException)
+
+    def test_configuration_error(self):
+        """Test ConfigurationError."""
+        exc = ConfigurationError("Config error")
+        assert str(exc) == "Config error"
+        assert isinstance(exc, RdioAPIException)

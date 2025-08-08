@@ -27,6 +27,31 @@ class DatabaseOperations:
         """
         self.db_manager = db_manager
 
+    def save_call(
+        self,
+        upload_data: RdioScannerUpload,
+        client_ip: str | None = None,
+        stored_path: str | None = None,
+        api_key_id: str | None = None,
+    ) -> int:
+        """Save a radio call to the database (alias for save_radio_call).
+
+        Args:
+            upload_data: RdioScanner upload data
+            client_ip: IP address of uploader
+            stored_path: Path where audio file is stored
+            api_key_id: ID of API key used
+
+        Returns:
+            Database ID of the created record
+        """
+        return self.save_radio_call(
+            upload_data=upload_data,
+            audio_file_path=stored_path,
+            upload_ip=client_ip,
+            api_key_id=api_key_id,
+        )
+
     def save_radio_call(
         self,
         upload_data: RdioScannerUpload,
@@ -72,12 +97,18 @@ class DatabaseOperations:
             session.add(call)
             session.commit()
 
+            # Get the ID before the session closes
+            call_id = int(call.id)
+            system_id = call.system_id
+            talkgroup_id = call.talkgroup_id
+            call_timestamp = call.call_timestamp
+
             logger.info(
-                f"Saved radio call: ID={call.id}, System={call.system_id}, "
-                f"TG={call.talkgroup_id}, Time={call.call_timestamp}"
+                f"Saved radio call: ID={call_id}, System={system_id}, "
+                f"TG={talkgroup_id}, Time={call_timestamp}"
             )
 
-            return int(call.id)
+            return call_id
 
     def log_upload_attempt(
         self,
@@ -286,3 +317,223 @@ class DatabaseOperations:
 
             # Vacuum database to reclaim space
             self.db_manager.vacuum()
+
+    def query_calls(
+        self,
+        filters: dict[str, Any] | None = None,
+        page: int = 1,
+        per_page: int = 20,
+        sort_by: str = "call_timestamp",
+        sort_order: str = "desc",
+    ) -> dict[str, Any]:
+        """Query radio calls with filtering and pagination.
+
+        Args:
+            filters: Filter criteria
+            page: Page number (1-based)
+            per_page: Items per page
+            sort_by: Field to sort by
+            sort_order: Sort order (asc/desc)
+
+        Returns:
+            Dictionary with calls, total count, and pagination info
+        """
+        with self.db_manager.get_session() as session:
+            query = session.query(RadioCall)
+
+            # Apply filters
+            if filters:
+                if "system_id" in filters:
+                    query = query.filter(RadioCall.system_id == filters["system_id"])
+                if "talkgroup_id" in filters:
+                    query = query.filter(
+                        RadioCall.talkgroup_id == filters["talkgroup_id"]
+                    )
+                if "source_radio_id" in filters:
+                    query = query.filter(
+                        RadioCall.source_radio_id == filters["source_radio_id"]
+                    )
+                if "frequency" in filters:
+                    query = query.filter(RadioCall.frequency == filters["frequency"])
+                if "date_from" in filters:
+                    query = query.filter(
+                        RadioCall.call_timestamp >= filters["date_from"]
+                    )
+                if "date_to" in filters:
+                    query = query.filter(RadioCall.call_timestamp <= filters["date_to"])
+
+            # Get total count
+            total = query.count()
+
+            # Apply sorting
+            sort_column = getattr(RadioCall, sort_by, RadioCall.call_timestamp)
+            if sort_order == "desc":
+                query = query.order_by(desc(sort_column))
+            else:
+                query = query.order_by(sort_column)
+
+            # Apply pagination
+            offset = (page - 1) * per_page
+            query = query.offset(offset).limit(per_page)
+
+            # Execute query
+            calls = query.all()
+
+            # Convert to dict
+            result_calls = []
+            for call in calls:
+                result_calls.append(
+                    {
+                        "id": call.id,
+                        "call_timestamp": call.call_timestamp,
+                        "system_id": call.system_id,
+                        "system_label": call.system_label,
+                        "talkgroup_id": call.talkgroup_id,
+                        "talkgroup_label": call.talkgroup_label,
+                        "frequency": call.frequency,
+                        "source_radio_id": call.source_radio_id,
+                        "talker_alias": call.talker_alias,
+                        "audio_filename": call.audio_filename,
+                        "audio_size_bytes": call.audio_size_bytes,
+                        "audio_file_path": call.audio_file_path,
+                    }
+                )
+
+            total_pages = (total + per_page - 1) // per_page
+
+            return {
+                "calls": result_calls,
+                "total": total,
+                "total_pages": total_pages,
+            }
+
+    def get_call_by_id(self, call_id: int) -> dict[str, Any] | None:
+        """Get a specific call by ID.
+
+        Args:
+            call_id: Database ID of the call
+
+        Returns:
+            Call data or None if not found
+        """
+        with self.db_manager.get_session() as session:
+            call = session.query(RadioCall).filter(RadioCall.id == call_id).first()
+
+            if not call:
+                return None
+
+            return {
+                "id": call.id,
+                "call_timestamp": call.call_timestamp,
+                "system_id": call.system_id,
+                "system_label": call.system_label,
+                "talkgroup_id": call.talkgroup_id,
+                "talkgroup_label": call.talkgroup_label,
+                "frequency": call.frequency,
+                "source_radio_id": call.source_radio_id,
+                "talker_alias": call.talker_alias,
+                "audio_filename": call.audio_filename,
+                "audio_size_bytes": call.audio_size_bytes,
+                "audio_file_path": call.audio_file_path,
+                "patches": call.patches,
+                "frequencies": call.frequencies,
+                "sources": call.sources,
+                "created_at": call.created_at,
+                "upload_ip": call.upload_ip,
+            }
+
+    def get_systems_summary(self) -> list[dict[str, Any]]:
+        """Get summary statistics for all systems.
+
+        Returns:
+            List of system summaries
+        """
+        with self.db_manager.get_session() as session:
+            systems = (
+                session.query(
+                    RadioCall.system_id,
+                    RadioCall.system_label,
+                    func.count(RadioCall.id).label("total_calls"),
+                    func.min(RadioCall.call_timestamp).label("first_seen"),
+                    func.max(RadioCall.call_timestamp).label("last_seen"),
+                )
+                .group_by(RadioCall.system_id, RadioCall.system_label)
+                .all()
+            )
+
+            result = []
+            for system in systems:
+                # Get top talkgroups for this system
+                top_tgs = (
+                    session.query(
+                        RadioCall.talkgroup_id, func.count(RadioCall.id).label("count")
+                    )
+                    .filter(RadioCall.system_id == system.system_id)
+                    .filter(RadioCall.talkgroup_id.isnot(None))
+                    .group_by(RadioCall.talkgroup_id)
+                    .order_by(desc("count"))
+                    .limit(10)
+                    .all()
+                )
+
+                top_talkgroups = {str(tg_id): count for tg_id, count in top_tgs}
+
+                result.append(
+                    {
+                        "system_id": system.system_id,
+                        "system_label": system.system_label,
+                        "total_calls": system.total_calls,
+                        "first_seen": system.first_seen,
+                        "last_seen": system.last_seen,
+                        "top_talkgroups": top_talkgroups,
+                    }
+                )
+
+            return result
+
+    def get_talkgroups_summary(
+        self, system_id: str | None = None, min_calls: int = 1
+    ) -> list[dict[str, Any]]:
+        """Get summary statistics for talkgroups.
+
+        Args:
+            system_id: Optional system ID to filter by
+            min_calls: Minimum number of calls to include
+
+        Returns:
+            List of talkgroup summaries
+        """
+        with self.db_manager.get_session() as session:
+            query = session.query(
+                RadioCall.talkgroup_id,
+                RadioCall.talkgroup_label,
+                RadioCall.system_id,
+                func.count(RadioCall.id).label("total_calls"),
+                func.max(RadioCall.call_timestamp).label("last_heard"),
+            ).filter(RadioCall.talkgroup_id.isnot(None))
+
+            if system_id:
+                query = query.filter(RadioCall.system_id == system_id)
+
+            query = (
+                query.group_by(
+                    RadioCall.talkgroup_id,
+                    RadioCall.talkgroup_label,
+                    RadioCall.system_id,
+                )
+                .having(func.count(RadioCall.id) >= min_calls)
+                .order_by(desc("total_calls"))
+            )
+
+            talkgroups = query.all()
+
+            return [
+                {
+                    "talkgroup_id": tg.talkgroup_id,
+                    "talkgroup_label": tg.talkgroup_label,
+                    "system_id": tg.system_id,
+                    "total_calls": tg.total_calls,
+                    "last_heard": tg.last_heard,
+                }
+                for tg in talkgroups
+            ]

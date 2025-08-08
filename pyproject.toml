@@ -12,6 +12,7 @@ dependencies = [
     "sqlalchemy>=2.0.42",
     "colorlog>=6.9.0",
     "python-multipart>=0.0.20",
+    "slowapi>=0.1.9",
 ]
 
 [tool.uv]
@@ -29,6 +30,9 @@ dev-dependencies = [
     "safety>=3.6.0",
     "bandit>=1.8.0",
     "twine>=6.1.0",
+    "pytest-benchmark>=5.1.0",
+    "psutil>=6.1.1",
+    "pip-audit>=2.9.0",
 ]
 
 [tool.black]

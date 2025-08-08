@@ -59,9 +59,18 @@ class RadioCall(Base):
 
     # Create composite indexes for common queries
     __table_args__ = (
+        # Primary query patterns
         Index("idx_system_talkgroup", "system_id", "talkgroup_id"),
         Index("idx_timestamp_system", "call_timestamp", "system_id"),
         Index("idx_talkgroup_timestamp", "talkgroup_id", "call_timestamp"),
+        # Date range queries
+        Index("idx_created_at_desc", "created_at", postgresql_using="btree"),
+        # Frequency analysis
+        Index("idx_frequency_system", "frequency", "system_id"),
+        # Source tracking
+        Index("idx_source_system", "source_radio_id", "system_id"),
+        # Recent calls query optimization
+        Index("idx_recent_calls", "system_id", "call_timestamp", "talkgroup_id"),
     )
 
 

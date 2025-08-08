@@ -11,8 +11,12 @@ from fastapi.responses import JSONResponse
 
 from ..config import Config, setup_logging
 from ..database import DatabaseManager, DatabaseOperations
+from ..middleware import RateLimitMiddleware
+from ..middleware.security import SecurityHeadersMiddleware
+from ..middleware.validation import RequestValidationMiddleware
 from ..models.api_models import HealthCheckResponse, StatisticsResponse
 from ..utils.file_handler import FileHandler
+from .query import router as query_router
 from .rdioscanner import router as rdioscanner_router
 
 logger = logging.getLogger(__name__)
@@ -81,13 +85,34 @@ def create_app(
     # Setup logging
     setup_logging(config.logging)
 
-    # Create app
+    # Create app with comprehensive documentation
     app = FastAPI(
         title="RdioCallsAPI",
-        description="A modular RdioScanner API ingestion server for SDRTrunk",
+        description="""## Professional Radio Scanner API Server
+
+A high-performance API server for receiving, storing, and managing radio scanner audio calls from SDRTrunk.
+
+### Features
+- 📡 **RdioScanner Protocol Support** - Full compatibility with SDRTrunk's RdioScanner upload format
+- 🚀 **HTTP/2 Support** - Built on Hypercorn for modern protocol support
+- 🔒 **Security First** - Rate limiting, input validation, security headers
+- 📊 **Real-time Metrics** - System statistics and monitoring endpoints
+- 🗄️ **Organized Storage** - Date-based directory structure with metadata-rich filenames
+- ⚡ **High Performance** - Async operations, connection pooling, optimized queries
+
+### API Sections
+- **Upload** - Submit radio calls with audio and metadata
+- **Health** - Service health monitoring
+- **Metrics** - System statistics and performance metrics
+        """,
         version="1.0.0",
         docs_url="/docs" if config.server.enable_docs else None,
         redoc_url="/redoc" if config.server.enable_docs else None,
+        openapi_tags=[
+            {"name": "upload", "description": "Radio call upload endpoints"},
+            {"name": "health", "description": "Health check endpoints"},
+            {"name": "metrics", "description": "Statistics and metrics endpoints"},
+        ],
         lifespan=lifespan,
     )
 
@@ -104,17 +129,54 @@ def create_app(
             allow_headers=["*"],
         )
 
+    # Add security headers middleware
+    app.add_middleware(SecurityHeadersMiddleware)
+
+    # Add request validation middleware
+    app.add_middleware(RequestValidationMiddleware)
+
+    # Configure rate limiting
+    rate_limiter = RateLimitMiddleware(app, config)
+    app.state.rate_limiter = rate_limiter
+
     # Add routers
     app.include_router(rdioscanner_router)
+    app.include_router(query_router)
 
     # Add monitoring endpoints
     if config.monitoring.health_check.enabled:
 
         @app.get(
-            config.monitoring.health_check.path, response_model=HealthCheckResponse
+            config.monitoring.health_check.path,
+            response_model=HealthCheckResponse,
+            tags=["health"],
+            summary="Health Check",
+            description="Check the health status of the API and its dependencies",
+            responses={
+                200: {
+                    "description": "Service is healthy",
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "status": "healthy",
+                                "timestamp": "2024-12-06T12:34:56Z",
+                                "version": "1.0.0",
+                                "database": "connected",
+                            }
+                        }
+                    },
+                }
+            },
         )
         async def health_check(request: Request) -> HealthCheckResponse:
-            """Health check endpoint."""
+            """Check API health and database connectivity.
+
+            Returns the current health status of the API including:
+            - Overall health status
+            - Database connection status
+            - API version
+            - Current timestamp
+            """
             try:
                 # Check database connection
                 _ = request.app.state.db_ops
@@ -132,9 +194,41 @@ def create_app(
 
     if config.monitoring.metrics.enabled:
 
-        @app.get(config.monitoring.metrics.path, response_model=StatisticsResponse)
+        @app.get(
+            config.monitoring.metrics.path,
+            response_model=StatisticsResponse,
+            tags=["metrics"],
+            summary="System Metrics",
+            description="Get comprehensive system statistics and metrics",
+            responses={
+                200: {
+                    "description": "System metrics retrieved successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "total_calls": 1234,
+                                "calls_today": 56,
+                                "calls_last_hour": 12,
+                                "systems": {"123": 100, "456": 50},
+                                "talkgroups": {"1001": 25, "1002": 30},
+                                "upload_sources": {"192.168.1.100": 150},
+                                "storage_used_mb": 256.5,
+                                "audio_files_count": 1234,
+                            }
+                        }
+                    },
+                }
+            },
+        )
         async def metrics(request: Request) -> StatisticsResponse:
-            """Statistics/metrics endpoint."""
+            """Get comprehensive system statistics.
+
+            Returns detailed metrics including:
+            - Total call counts (all-time, today, last hour)
+            - Breakdown by system and talkgroup
+            - Upload source statistics
+            - Storage utilization metrics
+            """
             db_ops: DatabaseOperations = request.app.state.db_ops
             file_handler: FileHandler = request.app.state.file_handler
 

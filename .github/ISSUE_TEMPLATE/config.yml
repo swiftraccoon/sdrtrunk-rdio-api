@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: GitHub Discussions
+    url: https://github.com/YOUR_USERNAME/rdioCallsAPI/discussions
+    about: For general discussions, ideas, and community support
+  - name: Documentation
+    url: https://github.com/YOUR_USERNAME/rdioCallsAPI/blob/main/README.md
+    about: Check our documentation for setup and usage guides
+  - name: Security Issues
+    url: https://github.com/YOUR_USERNAME/rdioCallsAPI/security/policy
+    about: Please report security vulnerabilities privately

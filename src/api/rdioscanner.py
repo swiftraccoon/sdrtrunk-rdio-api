@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 from ..database.operations import DatabaseOperations
+from ..middleware.rate_limiter import get_limiter
 from ..models.api_models import CallUploadResponse, RdioScannerUpload
 from ..utils.file_handler import FileHandler
 from ..utils.multipart_parser import (
@@ -18,7 +19,10 @@ from ..utils.multipart_parser import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["RdioScanner"])
+router = APIRouter(tags=["upload"])
+
+# Get the limiter instance
+limiter = get_limiter()
 
 
 def get_client_info(request: Request) -> tuple[str, str]:
@@ -69,16 +73,94 @@ def validate_api_key(
     return False, None
 
 
-@router.post("/api/call-upload", response_model=CallUploadResponse)
-async def upload_call(request: Request) -> Response:
-    """RdioScanner API endpoint for receiving calls from SDRTrunk.
+@router.post(
+    "/api/call-upload",
+    response_model=CallUploadResponse,
+    summary="Upload Radio Call",
+    description="""Upload a radio call recording with metadata from SDRTrunk.
 
-    This endpoint accepts multipart form data with the following fields:
+    This endpoint accepts multipart/form-data with audio file and metadata fields.
+    Compatible with the RdioScanner protocol used by SDRTrunk.
+    """,
+    responses={
+        200: {
+            "description": "Call uploaded successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "ok",
+                        "callId": 12345,
+                        "message": "Call uploaded successfully",
+                    }
+                },
+                "text/plain": {"example": "ok"},
+            },
+        },
+        400: {
+            "description": "Invalid request data",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Missing required fields: system and dateTime"
+                    }
+                }
+            },
+        },
+        401: {
+            "description": "Invalid API key",
+            "content": {"application/json": {"example": {"detail": "Invalid API key"}}},
+        },
+        413: {
+            "description": "File too large",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "File size exceeds maximum allowed"}
+                }
+            },
+        },
+        429: {
+            "description": "Rate limit exceeded",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Rate limit exceeded. Please try again later."
+                    }
+                }
+            },
+        },
+        500: {
+            "description": "Internal server error",
+            "content": {
+                "application/json": {"example": {"detail": "Internal server error"}}
+            },
+        },
+    },
+)
+@limiter.limit("60 per minute")
+async def upload_call(request: Request) -> Response:
+    """Handle RdioScanner call upload from SDRTrunk.
+
+    Accepts multipart/form-data with the following fields:
+
+    **Required fields:**
     - key: API key for authentication
-    - system: System ID
-    - dateTime: Unix timestamp
-    - audio: MP3 audio file
-    - Additional optional fields per RdioScanner spec
+    - system: System ID (numeric string)
+    - dateTime: Unix timestamp in seconds
+    - audio: Audio file (MP3, M4A, AAC, or WAV)
+
+    **Optional metadata fields:**
+    - frequency: Frequency in Hz
+    - talkgroup: Talkgroup ID
+    - source: Source radio ID
+    - systemLabel: Human-readable system name
+    - talkgroupLabel: Human-readable talkgroup name
+    - talkgroupGroup: Talkgroup category/group
+    - talkerAlias: Alias of the talking radio
+    - patches: Comma-separated list of patched talkgroups
+    - frequencies: Comma-separated list of frequencies
+    - sources: Comma-separated list of source IDs
+    - talkgroupTag: Additional talkgroup tag
+    - test: Test mode flag (1 for test)
     """
     start_time = time.time()
 
@@ -285,12 +367,20 @@ async def upload_call(request: Request) -> Response:
 
         # Process based on mode
         stored_path: str | None = None
+        call_id: int | None = None
 
         if config.processing.mode == "log_only":
-            # Just log the upload
+            # Just log the upload without storing audio
             logger.info(
                 f"Logged call: System={system}, TG={upload_data.talkgroup}, "
                 f"Freq={upload_data.frequency}, Time={upload_data.dateTime}"
+            )
+            # Still save to database even in log_only mode
+            call_id = db_ops.save_radio_call(
+                upload_data,
+                audio_file_path=None,
+                upload_ip=client_ip,
+                api_key_id=api_key_id,
             )
 
         elif config.processing.mode in ["store", "process"]:
@@ -324,12 +414,17 @@ async def upload_call(request: Request) -> Response:
                         audio.filename, audio.content
                     )
 
-                    # Move to permanent storage
+                    # Move to permanent storage with verbose filename
                     stored_path_obj = file_handler.store_file(
                         temp_path,
                         system,
                         datetime.fromtimestamp(upload_data.dateTime),
                         upload_data.talkgroup,
+                        upload_data.talkgroupLabel,
+                        upload_data.frequency,
+                        upload_data.source,
+                        upload_data.talkerAlias,
+                        upload_data.systemLabel,
                     )
                     stored_path = str(stored_path_obj)
 

@@ -25,7 +25,7 @@ class APIKeyConfig(BaseModel):
 class ServerConfig(BaseModel):
     """Web server configuration."""
 
-    host: str = Field("0.0.0.0", description="Server host")
+    host: str = Field("0.0.0.0", description="Server host")  # nosec B104
     port: int = Field(8080, description="Server port")
     cors_origins: list[str] = Field(["*"], description="CORS allowed origins")
     enable_docs: bool = Field(True, description="Enable API documentation")

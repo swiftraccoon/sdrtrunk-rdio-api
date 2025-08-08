@@ -1,6 +1,5 @@
 """File handling utilities for audio file storage and management."""
 
-import hashlib
 import logging
 import shutil
 from datetime import datetime
@@ -115,10 +114,11 @@ class FileHandler:
         Returns:
             Path to temporary file
         """
-        # Generate unique filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        unique_suffix = hashlib.md5(content[:1024]).hexdigest()[:8]
-        safe_filename = f"{timestamp}_{unique_suffix}_{Path(filename).name}"
+        # Generate unique filename with timestamp including microseconds
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[
+            :21
+        ]  # Trim to 5 decimal places
+        safe_filename = f"{timestamp}_{Path(filename).name}"
 
         temp_path = self.temp_dir / safe_filename
 
@@ -134,14 +134,24 @@ class FileHandler:
         system_id: str,
         timestamp: datetime,
         talkgroup_id: int | None = None,
+        talkgroup_label: str | None = None,
+        frequency: int | None = None,
+        source_id: int | None = None,
+        talker_alias: str | None = None,
+        system_label: str | None = None,
     ) -> Path:
-        """Move file from temp to permanent storage.
+        """Move file from temp to permanent storage with descriptive filename.
 
         Args:
             temp_path: Path to temporary file
             system_id: System ID
             timestamp: Call timestamp
             talkgroup_id: Talkgroup ID
+            talkgroup_label: Human-readable talkgroup label
+            frequency: Frequency in Hz
+            source_id: Source radio ID
+            talker_alias: Talker alias/name
+            system_label: Human-readable system label
 
         Returns:
             Path to stored file
@@ -157,16 +167,61 @@ class FileHandler:
 
         storage_subdir.mkdir(parents=True, exist_ok=True)
 
-        # Build filename
-        time_str = timestamp.strftime("%Y%m%d_%H%M%S")
-        tg_str = f"_TG{talkgroup_id}" if talkgroup_id else ""
-        filename = f"{time_str}{tg_str}{temp_path.suffix}"
+        # Build verbose filename with all available metadata
+        # Format: YYYYMMDD_HHMMSS_SYS[system]_TG[id]_[label]_FREQ[freq]_SRC[id]_[alias].ext
+        components = []
 
-        # Handle duplicates
+        # Timestamp (always present)
+        components.append(timestamp.strftime("%Y%m%d_%H%M%S"))
+
+        # System info
+        sys_str = f"SYS{system_id}"
+        if system_label:
+            # Sanitize label for filename
+            safe_label = "".join(
+                c if c.isalnum() or c in "-_" else "_" for c in system_label
+            )[:30]
+            sys_str = f"{sys_str}_{safe_label}"
+        components.append(sys_str)
+
+        # Talkgroup info
+        if talkgroup_id:
+            tg_str = f"TG{talkgroup_id}"
+            if talkgroup_label:
+                # Sanitize label for filename
+                safe_label = "".join(
+                    c if c.isalnum() or c in "-_" else "_" for c in talkgroup_label
+                )[:30]
+                tg_str = f"{tg_str}_{safe_label}"
+            components.append(tg_str)
+
+        # Frequency info (convert Hz to MHz for readability)
+        if frequency:
+            freq_mhz = frequency / 1_000_000
+            components.append(f"FREQ{freq_mhz:.4f}MHz")
+
+        # Source/Unit info
+        if source_id:
+            src_str = f"SRC{source_id}"
+            if talker_alias:
+                # Sanitize alias for filename
+                safe_alias = "".join(
+                    c if c.isalnum() or c in "-_" else "_" for c in talker_alias
+                )[:20]
+                src_str = f"{src_str}_{safe_alias}"
+            components.append(src_str)
+
+        # Join all components with underscores
+        base_filename = "_".join(components)
+
+        # Add file extension
+        filename = f"{base_filename}{temp_path.suffix}"
+
+        # Handle duplicates by appending counter
         storage_path = storage_subdir / filename
         counter = 1
         while storage_path.exists():
-            filename = f"{time_str}{tg_str}_{counter}{temp_path.suffix}"
+            filename = f"{base_filename}_DUP{counter}{temp_path.suffix}"
             storage_path = storage_subdir / filename
             counter += 1
 

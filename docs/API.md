@@ -52,6 +52,7 @@ Upload a radio call recording with metadata.
 The API automatically detects the desired response format based on the `Accept` header:
 
 - **JSON Response** (when Accept includes "application/json"):
+
 ```json
 {
   "status": "ok",
@@ -61,6 +62,7 @@ The API automatically detects the desired response format based on the `Accept` 
 ```
 
 - **Plain Text Response** (default):
+
 ```
 Call imported successfully.
 ```
@@ -202,21 +204,25 @@ To configure SDRTrunk to use this API:
 ### Detailed Configuration
 
 **Host Field:**
+
 - Use `localhost` if SDRTrunk and the server are on the same computer
 - Use your server's IP address (like `192.168.1.100`) if they're on different computers
 - Use your domain name if you have one set up
 
 **Port Field:**
+
 - Default is `8080`
 - Must match the `port` setting in your server's config.yaml
 - Common alternatives: `8000`, `9000`, `3000`
 
 **API Key Field:**
+
 - Must exactly match one of the `api_keys` in your config.yaml
 - Case-sensitive
 - No extra spaces or quotes
 
 **System ID Field:**
+
 - A number that identifies your radio system
 - Can be any number (1, 123, 456, etc.)
 - Used to organize recordings from different systems
@@ -225,6 +231,7 @@ To configure SDRTrunk to use this API:
 ### Testing the Connection
 
 After configuring, always test the connection:
+
 1. Click the **"Test" button** in SDRTrunk
 2. You should see **"Test successful!"**
 3. If it fails, check:
@@ -236,6 +243,7 @@ After configuring, always test the connection:
 ### Multiple SDRTrunk Instances
 
 You can connect multiple SDRTrunk instances to the same server:
+
 - Use the same or different API keys
 - Use different System IDs for each instance
 - Each will appear separately in the statistics
