@@ -1,5 +1,14 @@
 # RdioCallsAPI
 
+[![CI](https://github.com/swiftraccoon/rdioCallsAPI/actions/workflows/ci.yml/badge.svg)](https://github.com/swiftraccoon/rdioCallsAPI/actions/workflows/ci.yml)
+[![CI/CD](https://github.com/swiftraccoon/rdioCallsAPI/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/swiftraccoon/rdioCallsAPI/actions/workflows/ci-cd.yml)
+[![Advanced CI](https://github.com/swiftraccoon/rdioCallsAPI/actions/workflows/advanced-ci.yml/badge.svg)](https://github.com/swiftraccoon/rdioCallsAPI/actions/workflows/advanced-ci.yml)
+[![codecov](https://codecov.io/gh/swiftraccoon/rdioCallsAPI/branch/main/graph/badge.svg)](https://codecov.io/gh/swiftraccoon/rdioCallsAPI)
+[![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+
 A simple, easy-to-use API server that receives radio call recordings from SDRTrunk and stores them for later use.
 
 ## What Does This Do?

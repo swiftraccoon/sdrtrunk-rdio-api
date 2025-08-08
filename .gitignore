@@ -42,7 +42,6 @@ config.yaml
 .DS_Store
 
 # uv
-uv.lock
 .python-version
 
 .claude/
