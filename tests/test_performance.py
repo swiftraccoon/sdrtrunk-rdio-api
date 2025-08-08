@@ -7,8 +7,8 @@ from datetime import datetime
 import pytest
 from fastapi.testclient import TestClient
 
-# Skip performance tests by default (run with: pytest -m performance)
-pytestmark = pytest.mark.performance
+# Skip performance tests by default (run with: pytest --run-slow)
+pytestmark = [pytest.mark.performance, pytest.mark.slow]
 
 
 class TestUploadPerformance:

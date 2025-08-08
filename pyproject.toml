@@ -85,3 +85,8 @@ ensure_newline_before_comments = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "performance: marks tests as performance benchmarks (deselect with '-m \"not performance\"')",
+    "benchmark: marks tests as benchmarks (deselect with '-m \"not benchmark\"')",
+]

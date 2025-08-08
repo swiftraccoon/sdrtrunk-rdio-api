@@ -495,7 +495,7 @@ async def upload_call(request: Request) -> Response:
                 response_code=500,
                 processing_time_ms=processing_time,
             )
-        except Exception:
-            pass
+        except Exception as log_error:
+            logger.warning(f"Failed to log upload attempt to database: {log_error}")
 
         raise HTTPException(status_code=500, detail="Internal server error") from None

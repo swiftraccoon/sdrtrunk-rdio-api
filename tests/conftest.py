@@ -1,5 +1,6 @@
 """Pytest configuration and fixtures."""
 
+import os
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
@@ -14,6 +15,37 @@ from src.config import Config
 from src.database.connection import DatabaseManager
 from src.database.operations import DatabaseOperations
 from src.utils.file_handler import FileHandler
+
+
+def pytest_addoption(parser):
+    """Add custom command line options."""
+    parser.addoption(
+        "--run-slow",
+        action="store_true",
+        default=False,
+        help="Run slow tests including performance benchmarks",
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    """Skip slow/performance tests unless --run-slow is given."""
+    if config.getoption("--run-slow"):
+        # Don't skip any tests when --run-slow is given
+        return
+
+    # In CI environment, skip all performance/benchmark tests
+    in_ci = os.environ.get("CI") == "true" or os.environ.get("GITHUB_ACTIONS") == "true"
+
+    skip_markers = ["slow", "performance", "benchmark"]
+
+    for item in items:
+        for marker in skip_markers:
+            if marker in item.keywords:
+                if in_ci:
+                    skip_reason = f"Skipping {marker} tests in CI environment"
+                else:
+                    skip_reason = f"Need --run-slow option to run {marker} tests"
+                item.add_marker(pytest.mark.skip(reason=skip_reason))
 
 
 @pytest.fixture
