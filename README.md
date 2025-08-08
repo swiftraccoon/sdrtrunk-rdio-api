@@ -1,8 +1,8 @@
 # RdioCallsAPI
 
-[![CI](https://github.com/swiftraccoon/rdioCallsAPI/actions/workflows/ci.yml/badge.svg)](https://github.com/swiftraccoon/rdioCallsAPI/actions/workflows/ci.yml)
-[![CI/CD](https://github.com/swiftraccoon/rdioCallsAPI/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/swiftraccoon/rdioCallsAPI/actions/workflows/ci-cd.yml)
-[![Advanced CI](https://github.com/swiftraccoon/rdioCallsAPI/actions/workflows/advanced-ci.yml/badge.svg)](https://github.com/swiftraccoon/rdioCallsAPI/actions/workflows/advanced-ci.yml)
+[![CI](https://github.com/swiftraccoon/sdrtrunk-rdio-api/actions/workflows/ci.yml/badge.svg)](https://github.com/swiftraccoon/sdrtrunk-rdio-api/actions/workflows/ci.yml)
+[![Advanced CI/CD](https://github.com/swiftraccoon/sdrtrunk-rdio-api/actions/workflows/advanced-ci.yml/badge.svg)](https://github.com/swiftraccoon/sdrtrunk-rdio-api/actions/workflows/advanced-ci.yml)
+[![CI/CD Pipeline](https://github.com/swiftraccoon/sdrtrunk-rdio-api/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/swiftraccoon/sdrtrunk-rdio-api/actions/workflows/ci-cd.yml)
 [![codecov](https://codecov.io/gh/swiftraccoon/rdioCallsAPI/branch/main/graph/badge.svg)](https://codecov.io/gh/swiftraccoon/rdioCallsAPI)
 [![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
