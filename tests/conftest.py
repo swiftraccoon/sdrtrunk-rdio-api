@@ -32,12 +32,12 @@ def pytest_collection_modifyitems(config, items):
     if config.getoption("--run-slow"):
         # Don't skip any tests when --run-slow is given
         return
-    
+
     # In CI environment, skip all performance/benchmark tests
     in_ci = os.environ.get("CI") == "true" or os.environ.get("GITHUB_ACTIONS") == "true"
-    
+
     skip_markers = ["slow", "performance", "benchmark"]
-    
+
     for item in items:
         for marker in skip_markers:
             if marker in item.keywords:
