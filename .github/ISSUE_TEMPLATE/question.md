@@ -17,7 +17,7 @@ Please describe what you've already tried or researched.
 
 **Configuration (if relevant)**
 ```yaml
-# Paste relevant parts of your config.yaml here
+# Paste relevant parts of your config/config.yaml here
 ```
 
 **Environment (if relevant)**

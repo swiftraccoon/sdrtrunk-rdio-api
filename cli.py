@@ -32,7 +32,7 @@ Examples:
   %(prog)s serve
 
   # Start server with custom config and port
-  %(prog)s serve -c myconfig.yaml --port 8080
+  %(prog)s serve -c config/myconfig.yaml --port 8080
 
   # Start server with debug logging
   %(prog)s serve --log-level DEBUG
@@ -52,8 +52,8 @@ Examples:
     parser.add_argument(
         "-c",
         "--config",
-        default="config.yaml",
-        help="Path to configuration file (default: config.yaml)",
+        default="config/config.yaml",
+        help="Path to configuration file (default: config/config.yaml)",
     )
     parser.add_argument(
         "-l",
@@ -96,8 +96,8 @@ Examples:
     init_parser.add_argument(
         "-o",
         "--output",
-        default="config.example.yaml",
-        help="Output file path (default: config.example.yaml)",
+        default="config/config.example.yaml",
+        help="Output file path (default: config/config.example.yaml)",
     )
     init_parser.add_argument(
         "--force", action="store_true", help="Overwrite existing file"
@@ -336,8 +336,8 @@ monitoring:
     output_path.write_text(example_config)
     print(f"✅ Generated example configuration at {output_path}")
     print("\nNext steps:")
-    print(f"1. Copy to config.yaml: cp {output_path} config.yaml")
-    print("2. Edit config.yaml to match your setup")
+    print(f"1. Copy to config.yaml: cp {output_path} config/config.yaml")
+    print("2. Edit config/config.yaml to match your setup")
     print(f"3. Start the server: {sys.argv[0]} serve")
     return 0
 

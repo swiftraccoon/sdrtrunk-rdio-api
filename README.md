@@ -94,12 +94,12 @@ uv sync
 
 ```bash
 # Copy the example config
-cp config.example.yaml config.yaml
+cp config/config.example.yaml config/config.yaml
 ```
 
 ### Step 4: Set Your API Key
 
-Open `config.yaml` in any text editor (Notepad, TextEdit, etc.) and change this line:
+Open `config/config.yaml` in any text editor (Notepad, TextEdit, etc.) and change this line:
 
 ```yaml
 security:
@@ -133,7 +133,7 @@ Press Ctrl+C to stop the server
    - **Type:** `RdioScanner`
    - **Host:** `localhost` (or your computer's IP address)
    - **Port:** `8080`
-   - **API Key:** *(the password you set in config.yaml)*
+   - **API Key:** *(the password you set in config/config.yaml)*
    - **System ID:** `1`
 3. Click "Test" - you should see "Test successful!"
 4. Save and start your playlist
@@ -212,14 +212,14 @@ security:
 
 ### "Invalid API key"
 
-1. **Check your config.yaml**: Make sure the API key is correct
+1. **Check your config/config.yaml**: Make sure the API key is correct
 2. **Check SDRTrunk**: Make sure the API key matches exactly
-3. **Restart the server** after changing config.yaml
+3. **Restart the server** after changing config/config.yaml
 
 ### "File format not supported"
 
 1. **Check SDRTrunk audio settings**: Make sure it's set to MP3
-2. **Check file size limits** in your config.yaml
+2. **Check file size limits** in your config/config.yaml
 
 ### Server won't start
 
@@ -344,4 +344,4 @@ If you need help:
    - Your operating system
    - Python version (`python3 --version`)
    - Error messages
-   - Your config.yaml (remove any API keys!)
+   - Your config/config.yaml (remove any API keys!)

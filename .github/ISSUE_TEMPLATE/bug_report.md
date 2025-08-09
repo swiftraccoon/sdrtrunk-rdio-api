@@ -31,7 +31,7 @@ Paste any error messages or logs here
 
 **Configuration**
 ```yaml
-# Paste relevant parts of your config.yaml here
+# Paste relevant parts of your config/config.yaml here
 ```
 
 **Additional context**

@@ -21,6 +21,7 @@ RUN uv sync --frozen --no-install-project
 
 # Copy source code
 COPY src/ ./src/
+COPY cli.py ./
 COPY README.md ./
 
 # Install project
@@ -46,9 +47,10 @@ WORKDIR /app
 COPY --from=builder /usr/local/bin/uv /usr/local/bin/uv
 COPY --from=builder --chown=rdio:rdio /app/.venv /app/.venv
 COPY --from=builder --chown=rdio:rdio /app/src /app/src
+COPY --from=builder --chown=rdio:rdio /app/cli.py /app/cli.py
 
 # Copy configuration
-COPY --chown=rdio:rdio config.example.yaml /app/config.yaml
+COPY --chown=rdio:rdio config/config.example.yaml /app/config/config.yaml
 
 # Set environment variables
 ENV PATH="/app/.venv/bin:$PATH" \
@@ -69,4 +71,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 EXPOSE 8000
 
 # Run application
-CMD ["uv", "run", "python", "-m", "src.main"]
+CMD ["uv", "run", "python", "cli.py", "serve"]

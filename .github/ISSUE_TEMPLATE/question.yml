@@ -54,7 +54,7 @@ body:
       description: What documentation or resources have you already checked?
       placeholder: |
         - Checked the README
-        - Looked at config.example.yaml
+        - Looked at config/config.example.yaml
         - Searched existing issues
 
   - type: checkboxes

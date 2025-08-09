@@ -59,8 +59,8 @@ By participating in this project, you agree to abide by our Code of Conduct:
 
 3. **Copy and configure the config file**:
    ```bash
-   cp config.example.yaml config.yaml
-   # Edit config.yaml as needed for your setup
+   cp config/config.example.yaml config/config.yaml
+   # Edit config/config.yaml as needed for your setup
    ```
 
 4. **Run tests to verify setup**:
@@ -327,7 +327,7 @@ make check
 
 1. **Enable debug logging**:
    ```yaml
-   # config.yaml
+   # config/config.yaml
    logging:
      level: DEBUG
    ```
