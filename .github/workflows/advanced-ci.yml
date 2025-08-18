@@ -19,7 +19,7 @@ jobs:
     name: Code Quality
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     
     - name: Install uv
       uses: astral-sh/setup-uv@v6
@@ -46,7 +46,7 @@ jobs:
     name: Type Check
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     
     - name: Install uv
       uses: astral-sh/setup-uv@v6
@@ -72,7 +72,7 @@ jobs:
         python-version: ["3.13"]
     
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     
     - name: Install uv
       uses: astral-sh/setup-uv@v6
@@ -103,7 +103,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [code-quality, type-check]
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     
     - name: Install uv
       uses: astral-sh/setup-uv@v6
@@ -151,7 +151,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule' || github.event_name == 'push'
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     
     - name: Install uv
       uses: astral-sh/setup-uv@v6
@@ -190,7 +190,7 @@ jobs:
     name: Dependency Audit
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     
     - name: Install uv
       uses: astral-sh/setup-uv@v6
@@ -218,7 +218,7 @@ jobs:
     needs: [test]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     
     - name: Install uv
       uses: astral-sh/setup-uv@v6
@@ -270,7 +270,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [code-quality, type-check, test]
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     
     - name: Install uv
       uses: astral-sh/setup-uv@v6
