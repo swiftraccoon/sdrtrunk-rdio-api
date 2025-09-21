@@ -66,11 +66,4 @@ pre-commit:
 all: format lint typecheck test
 
 clean:
-	find . -type d -name "__pycache__" -exec rm -rf {} +
-	find . -type f -name "*.pyc" -delete
-	find . -type d -name ".pytest_cache" -exec rm -rf {} +
-	find . -type d -name ".mypy_cache" -exec rm -rf {} +
-	find . -type d -name ".ruff_cache" -exec rm -rf {} +
-	rm -rf htmlcov/
-	rm -f .coverage
-	rm -rf .benchmarks/
+	python scripts/clean.py

@@ -159,7 +159,12 @@ class FileHandler:
         # Build storage path
         if self.organize_by_date:
             # Organize by date: storage/YYYY/MM/DD/system_id/
-            date_path = timestamp.strftime("%Y/%m/%d")
+            # Use Path to construct date path for cross-platform compatibility
+            date_path = (
+                Path(timestamp.strftime("%Y"))
+                / timestamp.strftime("%m")
+                / timestamp.strftime("%d")
+            )
             storage_subdir = self.storage_dir / date_path / system_id
         else:
             # Flat organization: storage/system_id/
