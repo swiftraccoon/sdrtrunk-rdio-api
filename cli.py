@@ -182,18 +182,18 @@ async def serve_command(args: Any, config: Config) -> None:
     hypercorn_config.errorlog = "-"
 
     print("\n>> Starting RdioCallsAPI Server")
-    print(f"├─ Address: http://{config.server.host}:{config.server.port}")
-    print("├─ HTTP/2: Enabled (required for SDRTrunk)")
-    print(f"├─ Processing Mode: {config.processing.mode}")
-    print(f"├─ Debug Mode: {config.server.debug}")
+    print(f"  - Address: http://{config.server.host}:{config.server.port}")
+    print("  - HTTP/2: Enabled (required for SDRTrunk)")
+    print(f"  - Processing Mode: {config.processing.mode}")
+    print(f"  - Debug Mode: {config.server.debug}")
     if config.server.enable_docs:
-        print(f"├─ API Docs: http://{config.server.host}:{config.server.port}/docs")
-    print(f"├─ Database: {config.database.path}")
-    print(f"├─ Audio Storage: {config.file_handling.storage.directory}")
+        print(f"  - API Docs: http://{config.server.host}:{config.server.port}/docs")
+    print(f"  - Database: {config.database.path}")
+    print(f"  - Audio Storage: {config.file_handling.storage.directory}")
     if config.security.api_keys:
-        print(f"└─ API Keys: {len(config.security.api_keys)} configured")
+        print(f"  - API Keys: {len(config.security.api_keys)} configured")
     else:
-        print("└─ API Keys: None (open access)")
+        print("  - API Keys: None (open access)")
 
     print("\nPress Ctrl+C to stop the server\n")
 
@@ -376,11 +376,11 @@ def stats_command(args: Any, config: Config) -> int:
 
         # Print header
         print(f"\n=== Recent Radio Calls (showing last {len(calls)}) ===")
-        print("─" * 100)
+        print("-" * 100)
         print(
             f"{'Time':^20} {'System':^10} {'TG':^8} {'Label':^20} {'Freq':^12} {'Source':^10} {'Size':^10}"
         )
-        print("─" * 100)
+        print("-" * 100)
 
         # Print calls
         for call in calls:
@@ -396,8 +396,8 @@ def stats_command(args: Any, config: Config) -> int:
             )
 
         # Show summary statistics
-        print("\n📈 Summary Statistics")
-        print("─" * 50)
+        print("\n=== Summary Statistics ===")
+        print("-" * 50)
 
         # Total calls
         total_calls = session.query(func.count(RadioCall.id)).scalar()
@@ -442,7 +442,7 @@ def test_db_command(args: Any, config: Config) -> int:
     # Setup logging
     setup_logging(config.logging)
 
-    print("🔍 Testing database connection...")
+    print(">> Testing database connection...")
     print(f"Database path: {config.database.path}")
 
     try:
@@ -463,15 +463,15 @@ def test_db_command(args: Any, config: Config) -> int:
                 size_mb = 0
 
             print("\n[SUCCESS] Database connection successful!")
-            print(f"├─ Radio Calls: {call_count:,}")
-            print(f"├─ Upload Logs: {upload_count:,}")
-            print(f"└─ Database Size: {size_mb:.2f} MB")
+            print(f"  - Radio Calls: {call_count:,}")
+            print(f"  - Upload Logs: {upload_count:,}")
+            print(f"  - Database Size: {size_mb:.2f} MB")
 
             # Show table info
-            print("\n📋 Database Tables:")
-            print("├─ radio_calls")
-            print("├─ upload_logs")
-            print("└─ alembic_version")
+            print("\n=== Database Tables ===")
+            print("  - radio_calls")
+            print("  - upload_logs")
+            print("  - alembic_version")
 
             return 0
 
@@ -487,10 +487,10 @@ def clean_command(args: Any, config: Config) -> int:
     setup_logging(config.logging)
 
     cutoff_date = datetime.utcnow() - timedelta(days=args.days)
-    print(f"🧹 Cleaning files and records older than {cutoff_date.date()}")
+    print(f">> Cleaning files and records older than {cutoff_date.date()}")
 
     if args.dry_run:
-        print("🔍 DRY RUN - No files will be deleted")
+        print("[DRY RUN] No files will be deleted")
 
     # Count files to delete
     audio_dir = Path(config.file_handling.storage.directory)
