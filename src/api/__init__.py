@@ -1,4 +1,4 @@
-"""API module for RdioCallsAPI."""
+"""API module for sdrtrunk-rdio-api."""
 
 from .app import create_app
 from .rdioscanner import router as rdioscanner_router

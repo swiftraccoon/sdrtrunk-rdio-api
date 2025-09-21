@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Test script for RdioCallsAPI - simulates SDRTrunk upload."""
+"""Test script for sdrtrunk-rdio-api - simulates SDRTrunk upload."""
 
 import argparse
 import time
@@ -92,7 +92,7 @@ def test_metrics(base_url: str) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Test RdioCallsAPI endpoints")
+    parser = argparse.ArgumentParser(description="Test sdrtrunk-rdio-api endpoints")
     parser.add_argument(
         "--url",
         default="http://localhost:8080/api/call-upload",

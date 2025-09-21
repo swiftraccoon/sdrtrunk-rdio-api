@@ -1,4 +1,4 @@
-"""Configuration management for RdioCallsAPI."""
+"""Configuration management for sdrtrunk-rdio-api."""
 
 import logging
 from pathlib import Path

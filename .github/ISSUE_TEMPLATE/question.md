@@ -23,4 +23,4 @@ Please describe what you've already tried or researched.
 **Environment (if relevant)**
 - OS: [e.g. Ubuntu 22.04]
 - Python version: [e.g. 3.13.2]
-- RdioCallsAPI version: [e.g. 0.1.0]
+- sdrtrunk-rdio-api version: [e.g. 0.1.0]

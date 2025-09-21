@@ -1,5 +1,5 @@
 name: Feature Request
-description: Suggest a new feature or enhancement for RdioCallsAPI
+description: Suggest a new feature or enhancement for sdrtrunk-rdio-api
 title: "[FEATURE] "
 labels: ["enhancement", "needs-triage"]
 body:
@@ -15,7 +15,7 @@ body:
       description: What problem does this feature solve? Why is it needed?
       placeholder: |
         I'm trying to...
-        Currently, RdioCallsAPI doesn't...
+        Currently, sdrtrunk-rdio-api doesn't...
         This would be useful because...
     validations:
       required: true

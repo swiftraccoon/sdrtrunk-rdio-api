@@ -1,4 +1,4 @@
-# RdioCallsAPI
+# sdrtrunk-rdio-api
 
 [![ubuntu-latest](https://github.com/swiftraccoon/sdrtrunk-rdio-api/actions/workflows/test-linux.yml/badge.svg)](https://github.com/swiftraccoon/sdrtrunk-rdio-api/actions/workflows/test-linux.yml)
 [![windows-latest](https://github.com/swiftraccoon/sdrtrunk-rdio-api/actions/workflows/test-windows.yml/badge.svg)](https://github.com/swiftraccoon/sdrtrunk-rdio-api/actions/workflows/test-windows.yml)
@@ -121,7 +121,7 @@ uv run python cli.py serve
 You should see:
 
 ```
-🚀 Starting RdioCallsAPI Server
+🚀 Starting sdrtrunk-rdio-api Server
 ├─ Address: http://0.0.0.0:8080
 └─ API Keys: 1 configured
 
@@ -255,7 +255,7 @@ Create `/etc/systemd/system/rdiocalls.service`:
 
 ```ini
 [Unit]
-Description=RdioCallsAPI Server
+Description=sdrtrunk-rdio-api Server
 After=network.target
 
 [Service]

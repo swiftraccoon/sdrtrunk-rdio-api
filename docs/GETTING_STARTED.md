@@ -1,6 +1,6 @@
-# Getting Started with RdioCallsAPI
+# Getting Started with sdrtrunk-rdio-api
 
-This guide will walk you through setting up RdioCallsAPI step-by-step, even if you're new to running servers or working with command lines.
+This guide will walk you through setting up sdrtrunk-rdio-api step-by-step, even if you're new to running servers or working with command lines.
 
 ## What You Need
 
@@ -14,7 +14,7 @@ Before starting, make sure you have:
 
 ### Step 1: Install Python
 
-RdioCallsAPI needs Python 3.13 to run.
+sdrtrunk-rdio-api needs Python 3.13 to run.
 
 **On Windows:**
 
@@ -40,7 +40,7 @@ sudo apt update
 sudo apt install python3.13 python3.13-venv git
 ```
 
-### Step 2: Download RdioCallsAPI
+### Step 2: Download sdrtrunk-rdio-api
 
 Open Terminal (Mac/Linux) or Command Prompt (Windows) and run:
 
@@ -115,7 +115,7 @@ uv run python cli.py serve
 You should see:
 
 ```
-🚀 Starting RdioCallsAPI Server
+🚀 Starting sdrtrunk-rdio-api Server
 ├─ Address: http://0.0.0.0:8080
 ├─ HTTP/2: Enabled (required for SDRTrunk)
 ├─ Processing Mode: store
@@ -185,7 +185,7 @@ If everything is working, you'll see recent calls listed. If not, see the troubl
 When SDRTrunk receives radio transmissions:
 
 1. SDRTrunk records the audio as an MP3 file
-2. SDRTrunk sends the MP3 and information to your RdioCallsAPI server
+2. SDRTrunk sends the MP3 and information to your sdrtrunk-rdio-api server
 3. Your server saves the MP3 file in `data/audio/`
 4. Your server records all the details in a database
 5. You can view statistics and information through the web interface

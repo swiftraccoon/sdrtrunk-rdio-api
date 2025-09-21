@@ -114,7 +114,7 @@ Before considering ANY task complete:
 
 ## Project-Specific Requirements
 
-### RdioCallsAPI Specific Standards
+### sdrtrunk-rdio-api Specific Standards
 
 1. **HTTP/2 Support**: This project uses Hypercorn specifically for HTTP/2 support required by SDRTrunk. NEVER suggest HTTP/1.1 alternatives.
 

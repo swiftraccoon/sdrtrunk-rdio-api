@@ -1,4 +1,4 @@
-"""Middleware for the RdioCallsAPI application."""
+"""Middleware for the sdrtrunk-rdio-api application."""
 
 from .rate_limiter import RateLimitMiddleware, get_limiter
 

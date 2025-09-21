@@ -34,7 +34,7 @@ services:
     networks:
       - rdio-network
     labels:
-      - "com.rdio.description=RdioCallsAPI Server"
+      - "com.rdio.description=sdrtrunk-rdio-api Server"
       - "com.rdio.version=1.0.0"
 
   # Optional: Redis for caching (future enhancement)

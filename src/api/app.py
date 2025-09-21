@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Application lifespan manager."""
     # Startup
-    logger.info("Starting RdioCallsAPI...")
+    logger.info("Starting sdrtrunk-rdio-api...")
 
     # Initialize components
     config: Config = app.state.config
@@ -51,17 +51,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     )
     app.state.file_handler = file_handler
 
-    logger.info("RdioCallsAPI started successfully")
+    logger.info("sdrtrunk-rdio-api started successfully")
 
     yield
 
     # Shutdown
-    logger.info("Shutting down RdioCallsAPI...")
+    logger.info("Shutting down sdrtrunk-rdio-api...")
 
     # Cleanup
     db_manager.close()
 
-    logger.info("RdioCallsAPI shutdown complete")
+    logger.info("sdrtrunk-rdio-api shutdown complete")
 
 
 def create_app(
@@ -87,7 +87,7 @@ def create_app(
 
     # Create app with comprehensive documentation
     app = FastAPI(
-        title="RdioCallsAPI",
+        title="sdrtrunk-rdio-api",
         description="""## Professional Radio Scanner API Server
 
 A high-performance API server for receiving, storing, and managing radio scanner audio calls from SDRTrunk.

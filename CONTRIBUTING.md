@@ -1,6 +1,6 @@
-# Contributing to RdioCallsAPI
+# Contributing to sdrtrunk-rdio-api
 
-Thank you for your interest in contributing to RdioCallsAPI! This document provides guidelines and instructions for contributing to the project.
+Thank you for your interest in contributing to sdrtrunk-rdio-api! This document provides guidelines and instructions for contributing to the project.
 
 ## Table of Contents
 
@@ -349,7 +349,7 @@ Contributors will be recognized in:
 - Release notes
 - GitHub contributors page
 
-Thank you for contributing to RdioCallsAPI! Your efforts help make this project better for everyone.
+Thank you for contributing to sdrtrunk-rdio-api! Your efforts help make this project better for everyone.
 
 ## Questions?
 

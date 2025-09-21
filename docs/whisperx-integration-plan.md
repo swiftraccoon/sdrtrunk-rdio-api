@@ -2,13 +2,13 @@
 
 ## Executive Summary
 
-This document outlines a comprehensive plan for integrating WhisperX audio transcription into the RdioCallsAPI system. The integration will provide automatic speech-to-text capabilities for radio call recordings while maintaining the system's existing architecture patterns, security standards, and performance characteristics.
+This document outlines a comprehensive plan for integrating WhisperX audio transcription into the sdrtrunk-rdio-api system. The integration will provide automatic speech-to-text capabilities for radio call recordings while maintaining the system's existing architecture patterns, security standards, and performance characteristics.
 
 ## Current System Analysis
 
 ### Architecture Overview
 
-The RdioCallsAPI follows a clean, layered architecture:
+The sdrtrunk-rdio-api follows a clean, layered architecture:
 
 - **API Layer** (`src/api/`): FastAPI endpoints handling HTTP/2 requests from SDRTrunk
 - **Database Layer** (`src/database/`): SQLAlchemy-based operations with SQLite backend
@@ -1510,4 +1510,4 @@ transcription:
 - ✅ Automatic cleanup of temporary files
 - ✅ Configuration hot-reload for tuning
 
-This comprehensive plan provides a robust foundation for integrating WhisperX transcription while maintaining the high standards of the existing RdioCallsAPI codebase. The phased approach allows for iterative development and testing, ensuring a reliable production deployment.
+This comprehensive plan provides a robust foundation for integrating WhisperX transcription while maintaining the high standards of the existing sdrtrunk-rdio-api codebase. The phased approach allows for iterative development and testing, ensuring a reliable production deployment.

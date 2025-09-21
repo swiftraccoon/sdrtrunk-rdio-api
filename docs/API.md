@@ -1,8 +1,8 @@
-# RdioCallsAPI - API Documentation
+# sdrtrunk-rdio-api - API Documentation
 
 ## Overview
 
-RdioCallsAPI implements the RdioScanner protocol for receiving radio call uploads from SDRTrunk. The API is designed to be simple, secure, and modular.
+sdrtrunk-rdio-api implements the RdioScanner protocol for receiving radio call uploads from SDRTrunk. The API is designed to be simple, secure, and modular.
 
 ## Authentication
 

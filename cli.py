@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Enhanced CLI for RdioCallsAPI with multiple commands and options."""
+"""Enhanced CLI for sdrtrunk-rdio-api with multiple commands and options."""
 
 import argparse
 import asyncio
@@ -24,7 +24,7 @@ from src.models.database_models import RadioCall, UploadLog
 def create_parser() -> argparse.ArgumentParser:
     """Create the main argument parser."""
     parser = argparse.ArgumentParser(
-        description="RdioCallsAPI - RdioScanner ingestion server for SDRTrunk",
+        description="sdrtrunk-rdio-api - RdioScanner ingestion server for SDRTrunk",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -181,7 +181,7 @@ async def serve_command(args: Any, config: Config) -> None:
     hypercorn_config.accesslog = "-" if config.server.debug else None
     hypercorn_config.errorlog = "-"
 
-    print("\n>> Starting RdioCallsAPI Server")
+    print("\n>> Starting sdrtrunk-rdio-api Server")
     print(f"  - Address: http://{config.server.host}:{config.server.port}")
     print("  - HTTP/2: Enabled (required for SDRTrunk)")
     print(f"  - Processing Mode: {config.processing.mode}")
@@ -209,7 +209,7 @@ def init_command(args: Any) -> int:
         print(f"[ERROR] File {output_path} already exists. Use --force to overwrite.")
         return 1
 
-    example_config = """# RdioCallsAPI Configuration
+    example_config = """# sdrtrunk-rdio-api Configuration
 # This is an example configuration file for the RdioScanner API ingestion server
 
 # API Server Configuration

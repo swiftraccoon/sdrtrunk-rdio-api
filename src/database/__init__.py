@@ -1,4 +1,4 @@
-"""Database module for RdioCallsAPI."""
+"""Database module for sdrtrunk-rdio-api."""
 
 from .connection import DatabaseManager
 from .operations import DatabaseOperations

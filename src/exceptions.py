@@ -1,8 +1,8 @@
-"""Custom exceptions for RdioCallsAPI."""
+"""Custom exceptions for sdrtrunk-rdio-api."""
 
 
 class RdioAPIException(Exception):
-    """Base exception for RdioCallsAPI."""
+    """Base exception for sdrtrunk-rdio-api."""
 
     pass
 

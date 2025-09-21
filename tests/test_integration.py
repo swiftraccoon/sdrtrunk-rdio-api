@@ -1,4 +1,4 @@
-"""Integration tests for the complete RdioCallsAPI workflow."""
+"""Integration tests for the complete sdrtrunk-rdio-api workflow."""
 
 import time
 from datetime import datetime

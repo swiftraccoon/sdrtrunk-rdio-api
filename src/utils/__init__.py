@@ -1,4 +1,4 @@
-"""Utility modules for RdioCallsAPI."""
+"""Utility modules for sdrtrunk-rdio-api."""
 
 from .file_handler import FileHandler
 from .multipart_parser import parse_multipart_form

@@ -11,7 +11,7 @@ We release patches for security vulnerabilities. Currently supported versions:
 
 ## Reporting a Vulnerability
 
-We take the security of RdioCallsAPI seriously. If you believe you have found a security vulnerability, please report it responsibly.
+We take the security of sdrtrunk-rdio-api seriously. If you believe you have found a security vulnerability, please report it responsibly.
 
 ### Please do NOT
 

@@ -1,4 +1,4 @@
-"""Performance benchmarking tests for RdioCallsAPI."""
+"""Performance benchmarking tests for sdrtrunk-rdio-api."""
 
 import time
 from concurrent.futures import ThreadPoolExecutor

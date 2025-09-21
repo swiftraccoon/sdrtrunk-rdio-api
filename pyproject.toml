@@ -1,5 +1,5 @@
 [project]
-name = "rdioCallsAPI"
+name = "sdrtrunk-rdio-api"
 version = "0.1.0"
 description = "API for rdio scanner calls"
 readme = "README.md"

@@ -1,12 +1,12 @@
 name: Question
-description: Ask a question about RdioCallsAPI
+description: Ask a question about sdrtrunk-rdio-api
 title: "[QUESTION] "
 labels: ["question", "needs-triage"]
 body:
   - type: markdown
     attributes:
       value: |
-        Have a question about RdioCallsAPI? We're here to help!
+        Have a question about sdrtrunk-rdio-api? We're here to help!
 
   - type: textarea
     id: question
@@ -16,7 +16,7 @@ body:
       placeholder: |
         How do I...
         What's the best way to...
-        Can RdioCallsAPI...
+        Can sdrtrunk-rdio-api...
     validations:
       required: true
 
