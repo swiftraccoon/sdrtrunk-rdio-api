@@ -181,7 +181,7 @@ async def serve_command(args: Any, config: Config) -> None:
     hypercorn_config.accesslog = "-" if config.server.debug else None
     hypercorn_config.errorlog = "-"
 
-    print("\n🚀 Starting RdioCallsAPI Server")
+    print("\n>> Starting RdioCallsAPI Server")
     print(f"├─ Address: http://{config.server.host}:{config.server.port}")
     print("├─ HTTP/2: Enabled (required for SDRTrunk)")
     print(f"├─ Processing Mode: {config.processing.mode}")
@@ -206,7 +206,7 @@ def init_command(args: Any) -> int:
     output_path = Path(args.output)
 
     if output_path.exists() and not args.force:
-        print(f"❌ File {output_path} already exists. Use --force to overwrite.")
+        print(f"[ERROR] File {output_path} already exists. Use --force to overwrite.")
         return 1
 
     example_config = """# RdioCallsAPI Configuration
@@ -334,7 +334,7 @@ monitoring:
 """
 
     output_path.write_text(example_config)
-    print(f"✅ Generated example configuration at {output_path}")
+    print(f"[SUCCESS] Generated example configuration at {output_path}")
     print("\nNext steps:")
     print(f"1. Copy to config.yaml: cp {output_path} config/config.yaml")
     print("2. Edit config/config.yaml to match your setup")
@@ -375,7 +375,7 @@ def stats_command(args: Any, config: Config) -> int:
             return 0
 
         # Print header
-        print(f"\n📊 Recent Radio Calls (showing last {len(calls)})")
+        print(f"\n=== Recent Radio Calls (showing last {len(calls)}) ===")
         print("─" * 100)
         print(
             f"{'Time':^20} {'System':^10} {'TG':^8} {'Label':^20} {'Freq':^12} {'Source':^10} {'Size':^10}"
@@ -462,7 +462,7 @@ def test_db_command(args: Any, config: Config) -> int:
             else:
                 size_mb = 0
 
-            print("\n✅ Database connection successful!")
+            print("\n[SUCCESS] Database connection successful!")
             print(f"├─ Radio Calls: {call_count:,}")
             print(f"├─ Upload Logs: {upload_count:,}")
             print(f"└─ Database Size: {size_mb:.2f} MB")
@@ -476,7 +476,7 @@ def test_db_command(args: Any, config: Config) -> int:
             return 0
 
     except Exception as e:
-        print("\n❌ Database connection failed!")
+        print("\n[ERROR] Database connection failed!")
         print(f"Error: {e}")
         return 1
 
@@ -511,9 +511,9 @@ def clean_command(args: Any, config: Config) -> int:
         if confirm.lower() == "y":
             for file in files_to_delete:
                 file.unlink()
-            print(f"✅ Deleted {len(files_to_delete)} files")
+            print(f"[SUCCESS] Deleted {len(files_to_delete)} files")
         else:
-            print("❌ Cancelled")
+            print("[CANCELLED] Operation cancelled")
 
     # Clean database records
     db_manager = DatabaseManager(config.database)
@@ -535,7 +535,7 @@ def clean_command(args: Any, config: Config) -> int:
                     RadioCall.call_timestamp < cutoff_date
                 ).delete()
                 session.commit()
-                print(f"✅ Deleted {old_calls:,} database records")
+                print(f"[SUCCESS] Deleted {old_calls:,} database records")
 
     return 0
 
@@ -606,7 +606,7 @@ def export_command(args: Any, config: Config) -> int:
                     }
                 )
 
-        print(f"✅ Exported {len(calls)} calls to {args.output}")
+        print(f"[SUCCESS] Exported {len(calls)} calls to {args.output}")
         return 0
 
 
