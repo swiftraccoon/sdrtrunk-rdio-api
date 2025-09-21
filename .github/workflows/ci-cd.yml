@@ -122,9 +122,10 @@ jobs:
       run: uv sync --all-extras --dev
     
     - name: Run performance benchmarks
+      env:
+        PYTEST_ADDOPTS: "--color=yes"
       run: |
-        # Add performance testing commands here
-        echo "Performance testing placeholder"
+        uv run pytest tests/test_performance.py --run-slow -m "performance"
 
   # Docker build
   docker:
@@ -248,6 +249,4 @@ jobs:
       run: uv sync --all-extras --dev
     
     - name: Build documentation
-      run: |
-        # Add documentation build commands here
-        echo "Documentation build placeholder"
+      run: uv run python scripts/check_docs.py

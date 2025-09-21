@@ -182,7 +182,7 @@ jobs:
       with:
         name: security-reports
         path: |
-          safety-report.json
+          pip-audit-report.json
           bandit-report.json
 
   # Dependency Check

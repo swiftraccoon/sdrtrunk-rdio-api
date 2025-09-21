@@ -55,4 +55,7 @@ jobs:
       run: uv run python cli.py --help
     
     - name: Test configuration generation
-      run: uv run python cli.py init --output test-config.yaml
+      run: |
+        uv run python cli.py init --output test-config.yaml
+        test -f test-config.yaml
+        rm test-config.yaml
