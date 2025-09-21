@@ -1,0 +1,113 @@
+name: Security
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run security checks daily at midnight UTC
+    - cron: '0 0 * * *'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.13"
+
+jobs:
+  scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    # Continue even if security issues are found - don't block PRs
+    continue-on-error: true
+
+    steps:
+    - uses: actions/checkout@v5
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        version: "latest"
+
+    - name: Set up Python
+      run: uv python install ${{ env.PYTHON_VERSION }}
+
+    - name: Install dependencies
+      run: uv sync --all-extras --dev
+
+    - name: Run Bandit security scan
+      run: |
+        uv run bandit -r src/ -f json -o bandit-report.json || true
+        uv run bandit -r src/ -ll
+      continue-on-error: true
+
+    - name: Check for dependency vulnerabilities
+      run: |
+        uv pip list --format=freeze > requirements.txt
+        uv run pip-audit -r requirements.txt --format json -o audit-report.json || true
+        uv run pip-audit -r requirements.txt || true
+      continue-on-error: true
+
+    - name: Upload security reports
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: security-reports-${{ github.sha }}
+        path: |
+          bandit-report.json
+          audit-report.json
+        retention-days: 30
+
+    - name: Run TruffleHog secrets detection
+      if: github.event_name != 'schedule'
+      uses: trufflesecurity/trufflehog@main
+      with:
+        path: ./
+        base: ${{ github.event.pull_request.base.sha || github.event.before }}
+        head: ${{ github.event.pull_request.head.sha || github.sha }}
+      continue-on-error: true
+
+  dependency-check:
+    name: Check Dependencies
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+
+    steps:
+    - uses: actions/checkout@v5
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        version: "latest"
+
+    - name: Set up Python
+      run: uv python install ${{ env.PYTHON_VERSION }}
+
+    - name: Check for outdated dependencies
+      run: |
+        uv sync --all-extras --dev
+        uv pip list --outdated || true
+
+    - name: Create issue if dependencies are outdated
+      if: failure()
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const issues = await github.rest.issues.listForRepo({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            labels: 'dependencies',
+            state: 'open'
+          });
+
+          if (issues.data.length === 0) {
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'Dependencies need updating',
+              body: 'Automated check found outdated dependencies. Please review and update.',
+              labels: ['dependencies', 'maintenance']
+            });
+          }

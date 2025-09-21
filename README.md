@@ -1,8 +1,10 @@
 # RdioCallsAPI
 
-[![CI](https://github.com/swiftraccoon/sdrtrunk-rdio-api/actions/workflows/ci.yml/badge.svg)](https://github.com/swiftraccoon/sdrtrunk-rdio-api/actions/workflows/ci.yml)
-[![Advanced CI/CD](https://github.com/swiftraccoon/sdrtrunk-rdio-api/actions/workflows/advanced-ci.yml/badge.svg)](https://github.com/swiftraccoon/sdrtrunk-rdio-api/actions/workflows/advanced-ci.yml)
-[![CI/CD Pipeline](https://github.com/swiftraccoon/sdrtrunk-rdio-api/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/swiftraccoon/sdrtrunk-rdio-api/actions/workflows/ci-cd.yml)
+[![ubuntu-latest](https://github.com/swiftraccoon/sdrtrunk-rdio-api/actions/workflows/test-linux.yml/badge.svg)](https://github.com/swiftraccoon/sdrtrunk-rdio-api/actions/workflows/test-linux.yml)
+[![windows-latest](https://github.com/swiftraccoon/sdrtrunk-rdio-api/actions/workflows/test-windows.yml/badge.svg)](https://github.com/swiftraccoon/sdrtrunk-rdio-api/actions/workflows/test-windows.yml)
+[![macos-latest](https://github.com/swiftraccoon/sdrtrunk-rdio-api/actions/workflows/test-macos.yml/badge.svg)](https://github.com/swiftraccoon/sdrtrunk-rdio-api/actions/workflows/test-macos.yml)
+[![Security](https://github.com/swiftraccoon/sdrtrunk-rdio-api/actions/workflows/security.yml/badge.svg)](https://github.com/swiftraccoon/sdrtrunk-rdio-api/actions/workflows/security.yml)
+[![Lint](https://github.com/swiftraccoon/sdrtrunk-rdio-api/actions/workflows/lint.yml/badge.svg)](https://github.com/swiftraccoon/sdrtrunk-rdio-api/actions/workflows/lint.yml)
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
