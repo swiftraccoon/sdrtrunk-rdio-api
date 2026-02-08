@@ -7,7 +7,7 @@
 [![Lint](https://github.com/swiftraccoon/sdrtrunk-rdio-api/actions/workflows/lint.yml/badge.svg)](https://github.com/swiftraccoon/sdrtrunk-rdio-api/actions/workflows/lint.yml)
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![codecov](https://codecov.io/gh/swiftraccoon/sdrtrunk-rdio-api/branch/main/graph/badge.svg)](https://codecov.io/gh/swiftraccoon/sdrtrunk-rdio-api)
 
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
@@ -29,30 +29,30 @@ If you're using SDRTrunk to record radio communications, this server will:
 
 Before you start, you need:
 
-- **Python 3.13** installed on your computer
+- **Python 3.11+** installed on your computer
 - **SDRTrunk** set up and working with your radio system
 - **Basic command line knowledge** (we'll guide you through it)
 
-### Installing Python 3.13
+### Installing Python 3.11+
 
 **Windows:**
 
 1. Go to [python.org/downloads](https://www.python.org/downloads/)
-2. Download Python 3.13
+2. Download Python 3.11 or newer
 3. Run the installer and check "Add Python to PATH"
 
 **Mac:**
 
 ```bash
 # Using Homebrew (install Homebrew first if you don't have it)
-brew install python@3.13
+brew install python@3.11
 ```
 
 **Linux (Ubuntu/Debian):**
 
 ```bash
 sudo apt update
-sudo apt install python3.13 python3.13-venv
+sudo apt install python3.11 python3.11-venv
 ```
 
 ## Quick Setup (5 minutes)
@@ -115,7 +115,7 @@ Pick any password you want - just remember it for SDRTrunk!
 ### Step 5: Start the Server
 
 ```bash
-uv run python cli.py serve
+uv run sdrtrunk-rdio-api serve
 ```
 
 You should see:
@@ -152,16 +152,16 @@ Your recordings will be saved in the `data/audio/` folder.
 
 ```bash
 # Start the server
-uv run python cli.py serve
+uv run sdrtrunk-rdio-api serve
 
 # See recent calls
-uv run python cli.py stats
+uv run sdrtrunk-rdio-api stats
 
 # Clean up old files (30+ days)
-uv run python cli.py clean --days 30
+uv run sdrtrunk-rdio-api clean --days 30
 
 # Get help
-uv run python cli.py --help
+uv run sdrtrunk-rdio-api --help
 ```
 
 ## Configuration Options
@@ -225,9 +225,9 @@ security:
 
 ### Server won't start
 
-1. **Check Python version**: Run `python3 --version` (should be 3.13+)
+1. **Check Python version**: Run `python3 --version` (should be 3.11+)
 2. **Check dependencies**: Run `uv sync` again
-3. **Check config file**: Run `uv run python cli.py init` to regenerate
+3. **Check config file**: Run `uv run sdrtrunk-rdio-api init` to regenerate
 4. **Check logs**: Look for error messages in the console
 
 ### Getting More Help
@@ -243,9 +243,9 @@ security:
 
 2. **Check the health endpoint**: `http://localhost:8080/health`
 
-3. **View recent activity**: `uv run python cli.py stats`
+3. **View recent activity**: `uv run sdrtrunk-rdio-api stats`
 
-4. **Test the connection**: `uv run python cli.py test-db`
+4. **Test the connection**: `uv run sdrtrunk-rdio-api test-db`
 
 ## Advanced Usage
 
@@ -262,7 +262,7 @@ After=network.target
 Type=simple
 User=your-username
 WorkingDirectory=/path/to/rdioCallsAPI
-ExecStart=/home/your-username/.cargo/bin/uv run python cli.py serve
+ExecStart=/home/your-username/.cargo/bin/uv run sdrtrunk-rdio-api serve
 Restart=always
 RestartSec=10
 
@@ -330,6 +330,8 @@ See the full API documentation at: [docs/API.md](docs/API.md)
 Quick reference:
 
 - **Upload**: `POST /api/call-upload` (used by SDRTrunk)
+- **Query**: `GET /api/calls` (search stored calls)
+- **Audio**: `GET /api/calls/{id}/audio` (stream stored audio)
 - **Health**: `GET /health` (check if server is working)
 - **Stats**: `GET /metrics` (see activity statistics)
 - **Docs**: `GET /docs` (interactive API documentation)
