@@ -14,12 +14,12 @@ Before starting, make sure you have:
 
 ### Step 1: Install Python
 
-sdrtrunk-rdio-api needs Python 3.13 to run.
+sdrtrunk-rdio-api needs Python 3.11+ to run.
 
 **On Windows:**
 
 1. Go to <https://www.python.org/downloads/>
-2. Click "Download Python 3.13.x"
+2. Click "Download Python 3.11+" (3.11 or newer)
 3. Run the installer
 4. **IMPORTANT**: Check the box "Add Python to PATH"
 5. Click "Install Now"
@@ -28,7 +28,7 @@ sdrtrunk-rdio-api needs Python 3.13 to run.
 If you have Homebrew installed:
 
 ```bash
-brew install python@3.13
+brew install python@3.11
 ```
 
 If you don't have Homebrew, download from python.org like Windows.
@@ -37,7 +37,7 @@ If you don't have Homebrew, download from python.org like Windows.
 
 ```bash
 sudo apt update
-sudo apt install python3.13 python3.13-venv git
+sudo apt install python3.11 python3.11-venv git
 ```
 
 ### Step 2: Download sdrtrunk-rdio-api
@@ -86,7 +86,7 @@ This might take a minute or two the first time.
 
 ```bash
 # Generate a sample config file
-uv run python cli.py init
+uv run sdrtrunk-rdio-api init
 
 # Copy it to become your main config
 cp config.example.yaml config.yaml
@@ -109,7 +109,7 @@ security:
 ### Step 7: Test the Server
 
 ```bash
-uv run python cli.py serve
+uv run sdrtrunk-rdio-api serve
 ```
 
 You should see:
@@ -175,7 +175,7 @@ Now we need to tell SDRTrunk to send audio files to your server:
 In your second terminal window, run:
 
 ```bash
-uv run python cli.py stats --last 5
+uv run sdrtrunk-rdio-api stats --last 5
 ```
 
 If everything is working, you'll see recent calls listed. If not, see the troubleshooting section below.
@@ -209,19 +209,19 @@ data/audio/
 
 ```bash
 # View recent activity
-uv run python cli.py stats
+uv run sdrtrunk-rdio-api stats
 
 # View recent activity with more details
-uv run python cli.py stats --last 20
+uv run sdrtrunk-rdio-api stats --last 20
 
 # Check if everything is working
-uv run python cli.py test-db
+uv run sdrtrunk-rdio-api test-db
 
 # Start the server
-uv run python cli.py serve
+uv run sdrtrunk-rdio-api serve
 
 # Start with debug logging (if you have problems)
-uv run python cli.py serve --log-level DEBUG
+uv run sdrtrunk-rdio-api serve --log-level DEBUG
 ```
 
 ## Web Interface
@@ -261,12 +261,12 @@ To stop the server, go back to the terminal where it's running and press `Ctrl+C
 - Check that SDRTrunk is actually receiving radio traffic
 - Make sure the streaming is enabled in SDRTrunk (green indicator)
 - Check the server logs for error messages
-- Try running with debug logging: `uv run python cli.py serve --log-level DEBUG`
+- Try running with debug logging: `uv run sdrtrunk-rdio-api serve --log-level DEBUG`
 
 ### Server won't start
 
 - Check that no other program is using port 8080
-- Try a different port: `uv run python cli.py serve --port 8081`
+- Try a different port: `uv run sdrtrunk-rdio-api serve --port 8081`
 - Check that your config.yaml file is valid YAML (proper indentation)
 
 ## Next Steps
@@ -274,7 +274,7 @@ To stop the server, go back to the terminal where it's running and press `Ctrl+C
 Once everything is working:
 
 1. Consider setting up the server to start automatically (see the main README)
-2. Set up file cleanup to manage disk space (`uv run python cli.py clean --help`)
+2. Set up file cleanup to manage disk space (`uv run sdrtrunk-rdio-api clean --help`)
 3. Explore the statistics and export features
 4. Consider setting up multiple API keys for different SDRTrunk instances
 
