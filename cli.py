@@ -215,7 +215,7 @@ def init_command(args: Any) -> int:
 # API Server Configuration
 server:
   host: "0.0.0.0"
-  port: 8000
+  port: 8080
   cors_origins: ["*"]
   enable_docs: true
   debug: false
@@ -648,5 +648,10 @@ async def main() -> int:
     return 0
 
 
-if __name__ == "__main__":
+def main_sync() -> None:
+    """Synchronous entry point for console_scripts."""
     sys.exit(asyncio.run(main()))
+
+
+if __name__ == "__main__":
+    main_sync()

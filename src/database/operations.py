@@ -1,7 +1,7 @@
 """Database operations for radio call data."""
 
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import desc, func
@@ -73,7 +73,7 @@ class DatabaseOperations:
         with self.db_manager.get_session() as session:
             # Create RadioCall record
             call = RadioCall(
-                call_timestamp=datetime.fromtimestamp(upload_data.dateTime),
+                call_timestamp=datetime.fromtimestamp(upload_data.dateTime, tz=UTC),
                 system_id=upload_data.system,
                 system_label=upload_data.systemLabel,
                 frequency=upload_data.frequency,

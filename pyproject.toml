@@ -3,7 +3,7 @@ name = "sdrtrunk-rdio-api"
 version = "0.1.0"
 description = "API for rdio scanner calls"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.116.0",
     "hypercorn>=0.17.0",
@@ -15,6 +15,16 @@ dependencies = [
     "python-multipart>=0.0.20",
     "slowapi>=0.1.9",
 ]
+
+[project.scripts]
+sdrtrunk-rdio-api = "cli:main_sync"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src", "cli.py"]
 
 [tool.uv]
 dev-dependencies = [
@@ -38,11 +48,11 @@ dev-dependencies = [
 
 [tool.black]
 line-length = 88
-target-version = ['py313']
+target-version = ['py311']
 
 [tool.ruff]
 line-length = 88
-target-version = "py313"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = [
@@ -57,7 +67,7 @@ select = [
 ignore = ["E501"]  # Line too long - let black handle it
 
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true

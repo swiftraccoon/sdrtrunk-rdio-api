@@ -1,8 +1,9 @@
 """RdioScanner API endpoint implementation."""
 
+import hmac
 import logging
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -51,9 +52,10 @@ def validate_api_key(
     if not config.security.api_keys:
         return True, None
 
-    # Check each configured API key
+    # Check each configured API key with constant-time comparison
     for idx, api_key_config in enumerate(config.security.api_keys):
-        if api_key_config.key == key:
+        # Use constant-time comparison to prevent timing attacks
+        if hmac.compare_digest(api_key_config.key, key):
             api_key_id = f"key_{idx}"
 
             # Check IP restrictions
@@ -418,7 +420,7 @@ async def upload_call(request: Request) -> Response:
                     stored_path_obj = file_handler.store_file(
                         temp_path,
                         system,
-                        datetime.fromtimestamp(upload_data.dateTime),
+                        datetime.fromtimestamp(upload_data.dateTime, tz=UTC),
                         upload_data.talkgroup,
                         upload_data.talkgroupLabel,
                         upload_data.frequency,

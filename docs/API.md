@@ -119,6 +119,33 @@ Get statistics about the API usage and stored data.
 }
 ```
 
+### Get Call Audio
+
+**GET** `/api/calls/{call_id}/audio`
+
+Stream the audio file for a specific radio call.
+
+#### Parameters
+
+| Parameter | Type | Location | Description |
+|-----------|------|----------|-------------|
+| call_id | integer | path | The database ID of the call |
+
+#### Response
+
+- **200 OK**: Returns the audio file with `Content-Type: audio/mpeg`
+- **404 Not Found**: Call does not exist or has no audio file
+
+#### Example
+
+```bash
+# Download audio for call ID 123
+curl -o call_123.mp3 http://localhost:8080/api/calls/123/audio
+
+# Stream in browser or audio player
+# Just open: http://localhost:8080/api/calls/123/audio
+```
+
 ## Test Mode
 
 The API supports a test mode for verifying connectivity without storing data. To use test mode, include `test=1` in the form data. The API will respond without processing or storing the upload.
