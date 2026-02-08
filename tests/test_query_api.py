@@ -1,6 +1,7 @@
 """Tests for query API endpoints."""
 
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
@@ -325,7 +326,122 @@ class TestQueryEndpoints:
         """Test query with source radio ID filter."""
         self.setup_test_data(db_ops)
 
-        response = test_client.get("/api/calls?source_radio_id=5000")
+        response = test_client.get("/api/calls?source_id=5000")
         assert response.status_code == 200
         data = response.json()
         assert data["total"] > 0
+        # Verify all returned calls have the requested source
+        for call in data["calls"]:
+            assert call["source_id"] == 5000
+
+    def test_get_call_audio(
+        self,
+        test_client: TestClient,
+        db_ops: DatabaseOperations,
+        test_config,
+    ) -> None:
+        """Test retrieving audio file for a call."""
+        # Create audio file in the configured storage directory
+        storage_dir = Path(test_config.file_handling.storage.directory)
+        storage_dir.mkdir(parents=True, exist_ok=True)
+        audio_file = storage_dir / "test_audio.mp3"
+        audio_file.write_bytes(b"\xff\xfb\x90\x00" + b"\x00" * 1024)
+
+        upload_data = RdioScannerUpload(
+            key="test",
+            system="1",
+            dateTime=int(datetime.now(UTC).timestamp()),
+            talkgroup=1234,
+        )
+        call_id = db_ops.save_call(
+            upload_data,
+            client_ip="127.0.0.1",
+            stored_path=str(audio_file),
+            api_key_id="test-key",
+        )
+
+        response = test_client.get(f"/api/calls/{call_id}/audio")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "audio/mpeg"
+        assert len(response.content) == 1028  # 4 header + 1024 data
+
+    def test_get_call_audio_not_found(self, test_client: TestClient) -> None:
+        """Test retrieving audio for a non-existent call."""
+        response = test_client.get("/api/calls/99999/audio")
+        assert response.status_code == 404
+
+    def test_get_call_audio_no_file(
+        self,
+        test_client: TestClient,
+        db_ops: DatabaseOperations,
+    ) -> None:
+        """Test retrieving audio when no audio file exists for the call."""
+        upload_data = RdioScannerUpload(
+            key="test",
+            system="1",
+            dateTime=int(datetime.now(UTC).timestamp()),
+            talkgroup=1234,
+        )
+        call_id = db_ops.save_call(
+            upload_data,
+            client_ip="127.0.0.1",
+            stored_path=None,
+            api_key_id="test-key",
+        )
+
+        response = test_client.get(f"/api/calls/{call_id}/audio")
+        assert response.status_code == 404
+
+    def test_get_call_audio_path_traversal(
+        self,
+        test_client: TestClient,
+        db_ops: DatabaseOperations,
+        temp_dir,
+    ) -> None:
+        """Test that path traversal attempts are blocked."""
+        # Create a file outside the storage directory
+        outside_file = temp_dir / "secret.txt"
+        outside_file.write_text("sensitive data")
+
+        upload_data = RdioScannerUpload(
+            key="test",
+            system="1",
+            dateTime=int(datetime.now(UTC).timestamp()),
+            talkgroup=1234,
+        )
+        call_id = db_ops.save_call(
+            upload_data,
+            client_ip="127.0.0.1",
+            stored_path=str(outside_file),
+            api_key_id="test-key",
+        )
+
+        response = test_client.get(f"/api/calls/{call_id}/audio")
+        assert response.status_code == 404
+
+    def test_get_call_audio_missing_file_on_disk(
+        self,
+        test_client: TestClient,
+        db_ops: DatabaseOperations,
+        test_config,
+    ) -> None:
+        """Test 404 when DB has a path but the file was deleted from disk."""
+        storage_dir = Path(test_config.file_handling.storage.directory)
+        storage_dir.mkdir(parents=True, exist_ok=True)
+        ghost_path = storage_dir / "deleted_audio.mp3"
+
+        upload_data = RdioScannerUpload(
+            key="test",
+            system="1",
+            dateTime=int(datetime.now(UTC).timestamp()),
+            talkgroup=1234,
+        )
+        call_id = db_ops.save_call(
+            upload_data,
+            client_ip="127.0.0.1",
+            stored_path=str(ghost_path),
+            api_key_id="test-key",
+        )
+
+        response = test_client.get(f"/api/calls/{call_id}/audio")
+        assert response.status_code == 404

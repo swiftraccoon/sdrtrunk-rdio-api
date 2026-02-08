@@ -3,6 +3,8 @@
 import time
 from datetime import datetime
 
+from fastapi.testclient import TestClient
+
 from src.database.operations import DatabaseOperations
 
 
@@ -311,3 +313,172 @@ class TestMonitoringIntegration:
         assert "talkgroups" in metrics
         assert "storage_used_mb" in metrics
         assert "audio_files_count" in metrics
+
+
+class TestSDRTrunkEndToEnd:
+    """End-to-end tests that replicate the real SDRTrunk -> API -> retrieval flow.
+
+    These tests exercise the full lifecycle: upload via the RdioScanner protocol
+    (matching what SDRTrunk actually sends), then retrieve via query and audio
+    streaming endpoints, verifying data integrity throughout.
+    """
+
+    def test_sdrtrunk_test_connection(self, test_client: TestClient) -> None:
+        """Replicate SDRTrunk's testConnection() call.
+
+        SDRTrunk sends key + system + test=1, expects HTTP 200 with body
+        containing 'incomplete call data: no talkgroup'.
+        """
+        response = test_client.post(
+            "/api/call-upload",
+            data={"key": "test-key", "system": "1", "test": "1"},
+            headers={"User-Agent": "sdrtrunk"},
+        )
+        assert response.status_code == 200
+        assert "incomplete call data: no talkgroup" in response.text
+
+    def test_upload_store_query_audio_roundtrip(
+        self,
+        test_client_with_storage: TestClient,
+        temp_audio_file,
+    ) -> None:
+        """Full roundtrip: upload audio -> query call -> stream audio back.
+
+        This is the critical path: SDRTrunk uploads a call with audio,
+        then a user queries for it and plays the audio back.
+        """
+        audio_bytes = temp_audio_file.read_bytes()
+
+        # 1) Upload a call with audio (store mode)
+        upload_response = test_client_with_storage.post(
+            "/api/call-upload",
+            data={
+                "key": "test-key",
+                "system": "1",
+                "dateTime": str(int(datetime.now().timestamp())),
+                "talkgroup": "4001",
+                "source": "9876",
+                "frequency": "853237500",
+                "systemLabel": "County P25",
+                "talkgroupLabel": "Fire Dispatch",
+                "talkgroupGroup": "Fire",
+                "talkerAlias": "Engine 7",
+                "patches": "[4001,4002]",
+            },
+            files={"audio": ("recording.mp3", audio_bytes, "audio/mpeg")},
+            headers={"User-Agent": "sdrtrunk"},
+        )
+        assert upload_response.status_code == 200
+        assert upload_response.text == "Call imported successfully."
+
+        # 2) Query calls and find the one we just uploaded
+        query_response = test_client_with_storage.get(
+            "/api/calls?system_id=1&talkgroup_id=4001"
+        )
+        assert query_response.status_code == 200
+        data = query_response.json()
+        assert data["total"] >= 1
+
+        call = data["calls"][0]
+        call_id = call["id"]
+        assert call["system_id"] == "1"
+        assert call["talkgroup_id"] == 4001
+        assert call["talkgroup_label"] == "Fire Dispatch"
+        assert call["frequency"] == 853237500
+        assert call["source_id"] == 9876
+
+        # 3) Retrieve the specific call by ID
+        detail_response = test_client_with_storage.get(f"/api/calls/{call_id}")
+        assert detail_response.status_code == 200
+        detail = detail_response.json()
+        assert detail["id"] == call_id
+        assert detail["system_id"] == "1"
+
+        # 4) Stream the audio back and verify content matches
+        audio_response = test_client_with_storage.get(f"/api/calls/{call_id}/audio")
+        assert audio_response.status_code == 200
+        assert audio_response.headers["content-type"] == "audio/mpeg"
+        assert audio_response.content == audio_bytes
+
+    def test_upload_plain_text_response_matches_sdrtrunk_expectations(
+        self,
+        test_client: TestClient,
+    ) -> None:
+        """Verify response format that SDRTrunk checks for success.
+
+        SDRTrunk checks: response.contains("Call imported successfully.")
+        If that doesn't match, it treats the upload as failed.
+        """
+        response = test_client.post(
+            "/api/call-upload",
+            data={
+                "key": "test-key",
+                "system": "1",
+                "dateTime": str(int(datetime.now().timestamp())),
+                "talkgroup": "100",
+            },
+            headers={"User-Agent": "sdrtrunk"},
+        )
+        assert response.status_code == 200
+        # SDRTrunk does substring match on this exact string
+        assert "Call imported successfully." in response.text
+
+    def test_upload_multiple_calls_then_query_systems_and_talkgroups(
+        self,
+        test_client_with_storage: TestClient,
+        temp_audio_file,
+    ) -> None:
+        """Upload calls across multiple systems, then verify query endpoints."""
+        audio_bytes = temp_audio_file.read_bytes()
+        now_ts = int(datetime.now().timestamp())
+
+        # Upload calls from different systems/talkgroups
+        calls = [
+            {"system": "1", "talkgroup": "100", "systemLabel": "City PD"},
+            {"system": "1", "talkgroup": "200", "systemLabel": "City PD"},
+            {"system": "2", "talkgroup": "300", "systemLabel": "County Fire"},
+            {"system": "2", "talkgroup": "300", "systemLabel": "County Fire"},
+            {"system": "2", "talkgroup": "400", "systemLabel": "County Fire"},
+        ]
+
+        for i, call in enumerate(calls):
+            response = test_client_with_storage.post(
+                "/api/call-upload",
+                data={
+                    "key": "test-key",
+                    "dateTime": str(now_ts - i),
+                    **call,
+                },
+                files={"audio": (f"call_{i}.mp3", audio_bytes, "audio/mpeg")},
+            )
+            assert response.status_code == 200
+
+        # Verify systems summary
+        systems_response = test_client_with_storage.get("/api/systems")
+        assert systems_response.status_code == 200
+        systems = systems_response.json()
+        system_ids = {s["system_id"] for s in systems}
+        assert "1" in system_ids
+        assert "2" in system_ids
+
+        sys1 = next(s for s in systems if s["system_id"] == "1")
+        sys2 = next(s for s in systems if s["system_id"] == "2")
+        assert sys1["total_calls"] == 2
+        assert sys2["total_calls"] == 3
+
+        # Verify talkgroups summary
+        tg_response = test_client_with_storage.get("/api/talkgroups?system_id=2")
+        assert tg_response.status_code == 200
+        talkgroups = tg_response.json()
+        assert all(tg["system_id"] == "2" for tg in talkgroups)
+        tg_ids = {tg["talkgroup_id"] for tg in talkgroups}
+        assert 300 in tg_ids
+        assert 400 in tg_ids
+
+        # Verify pagination
+        page_response = test_client_with_storage.get("/api/calls?per_page=2&page=1")
+        assert page_response.status_code == 200
+        page_data = page_response.json()
+        assert len(page_data["calls"]) == 2
+        assert page_data["total"] == 5
+        assert page_data["total_pages"] == 3
