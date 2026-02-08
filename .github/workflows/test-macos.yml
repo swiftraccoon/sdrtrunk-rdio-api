@@ -59,15 +59,15 @@ jobs:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
     - name: Test CLI help
-      run: uv run python cli.py --help
+      run: uv run sdrtrunk-rdio-api --help
 
     - name: Test configuration generation
       run: |
-        uv run python cli.py init --output test-config.yaml
+        uv run sdrtrunk-rdio-api init --output test-config.yaml
         if [ ! -f test-config.yaml ]; then
           echo "Config file not generated"
           exit 1
         fi
 
     - name: Test database operations
-      run: uv run python cli.py -c test-config.yaml test-db
+      run: uv run sdrtrunk-rdio-api -c test-config.yaml test-db

@@ -2,9 +2,11 @@
 
 import logging
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from ..database.operations import DatabaseOperations
@@ -299,3 +301,59 @@ async def list_talkgroups(
     except Exception as e:
         logger.error(f"Error listing talkgroups: {e}")
         raise HTTPException(status_code=500, detail="Error listing talkgroups") from e
+
+
+@router.get(
+    "/api/calls/{call_id}/audio",
+    summary="Get Call Audio",
+    description="Stream the audio file for a specific radio call",
+    responses={
+        200: {
+            "description": "Audio file",
+            "content": {"audio/mpeg": {}},
+        },
+        404: {"description": "Call not found or audio file missing"},
+    },
+)
+@limiter.limit("60 per minute")
+async def get_call_audio(request: Request, call_id: int) -> FileResponse:
+    """Stream audio file for a specific radio call."""
+    db_ops: DatabaseOperations = request.app.state.db_ops
+    config = request.app.state.config
+
+    try:
+        record = db_ops.get_call_by_id(call_id)
+        if not record:
+            raise HTTPException(status_code=404, detail="Call not found")
+
+        audio_path_str = record.get("audio_file_path")
+        if not audio_path_str:
+            raise HTTPException(status_code=404, detail="No audio file for this call")
+
+        audio_path = Path(audio_path_str).resolve()
+
+        # Path traversal prevention: ensure the resolved path is within the
+        # configured storage directory.
+        storage_dir = Path(config.file_handling.storage.directory).resolve()
+        if not audio_path.is_relative_to(storage_dir):
+            logger.warning(
+                f"Path traversal attempt for call {call_id}: {audio_path_str}"
+            )
+            raise HTTPException(status_code=404, detail="Audio file not found")
+
+        if not audio_path.is_file():
+            raise HTTPException(status_code=404, detail="Audio file not found")
+
+        filename = record.get("audio_filename") or audio_path.name
+
+        return FileResponse(
+            path=str(audio_path),
+            media_type="audio/mpeg",
+            filename=filename,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving audio for call {call_id}: {e}")
+        raise HTTPException(status_code=500, detail="Error retrieving audio") from e

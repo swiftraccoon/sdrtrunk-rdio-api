@@ -1,6 +1,6 @@
 # Multi-stage Dockerfile for RdioCallsAPI
 # Stage 1: Builder
-FROM python:3.13-slim as builder
+FROM python:3.11-slim as builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
@@ -28,7 +28,7 @@ COPY README.md ./
 RUN uv sync --frozen
 
 # Stage 2: Runtime
-FROM python:3.13-slim
+FROM python:3.11-slim
 
 # Create non-root user
 RUN useradd -m -u 1000 rdio && \
@@ -65,10 +65,10 @@ RUN mkdir -p data/audio data/temp logs
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import requests; exit(0 if requests.get('http://localhost:8000/health').status_code == 200 else 1)"
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')" || exit 1
 
 # Expose port
-EXPOSE 8000
+EXPOSE 8080
 
 # Run application
-CMD ["uv", "run", "python", "cli.py", "serve"]
+CMD ["sdrtrunk-rdio-api", "serve"]
