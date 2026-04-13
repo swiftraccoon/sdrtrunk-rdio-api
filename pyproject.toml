@@ -11,7 +11,7 @@ dependencies = [
     "pydantic>=2.9.0",
     "pyyaml>=6.0.2",
     "sqlalchemy>=2.0.42",
-    "colorlog>=6.9.0",
+    "colorlog>=6.10.1",
     "python-multipart>=0.0.20",
     "slowapi>=0.1.9",
 ]
