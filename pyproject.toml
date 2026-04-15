@@ -12,7 +12,7 @@ dependencies = [
     "pyyaml>=6.0.2",
     "sqlalchemy>=2.0.42",
     "colorlog>=6.9.0",
-    "python-multipart>=0.0.20",
+    "python-multipart>=0.0.26",
     "slowapi>=0.1.9",
 ]
 
