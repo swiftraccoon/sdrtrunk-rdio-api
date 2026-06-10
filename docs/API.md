@@ -57,9 +57,13 @@ The API automatically detects the desired response format based on the `Accept` 
 {
   "status": "ok",
   "message": "Call received and processed",
-  "callId": "1_1704123456_100"
+  "callId": "123"
 }
 ```
+
+`callId` is the database ID of the stored call - you can fetch the call
+back with `GET /api/calls/123` or stream its audio with
+`GET /api/calls/123/audio`.
 
 - **Plain Text Response** (default):
 
@@ -71,6 +75,8 @@ Call imported successfully.
 
 - **401 Unauthorized**: Invalid or missing API key
 - **400 Bad Request**: Missing required fields or invalid data
+- **413 Payload Too Large**: Audio file exceeds `max_file_size_mb`
+- **429 Too Many Requests**: Rate limit exceeded
 - **500 Internal Server Error**: Server-side error
 
 ### Health Check
@@ -150,13 +156,16 @@ curl -o call_123.mp3 http://localhost:8080/api/calls/123/audio
 
 The API supports a test mode for verifying connectivity without storing data. To use test mode, include `test=1` in the form data. The API will respond without processing or storing the upload.
 
+Test requests are authenticated: a test with an invalid API key returns
+401, so SDRTrunk's "Test" button genuinely verifies your key.
+
 ## Rate Limiting
 
-When rate limiting is enabled, the following limits apply by default:
+Limits come from `security.rate_limit` in config.yaml. Defaults:
 
-- 60 requests per minute
-- 1,000 requests per hour
-- 10,000 requests per day
+- 600 requests per minute
+- 10,000 requests per hour
+- 100,000 requests per day
 
 These limits are applied per IP address and can be configured in `config.yaml`.
 

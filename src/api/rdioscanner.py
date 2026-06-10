@@ -1,5 +1,6 @@
 """RdioScanner API endpoint implementation."""
 
+import asyncio
 import hmac
 import logging
 import time
@@ -8,9 +9,10 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
+from pydantic import ValidationError
 
 from ..database.operations import DatabaseOperations
-from ..middleware.rate_limiter import get_limiter
+from ..middleware.rate_limiter import get_active_limits, get_limiter
 from ..models.api_models import CallUploadResponse, RdioScannerUpload
 from ..utils.file_handler import FileHandler
 from ..utils.multipart_parser import (
@@ -26,15 +28,22 @@ router = APIRouter(tags=["upload"])
 limiter = get_limiter()
 
 
-def get_client_info(request: Request) -> tuple[str, str]:
-    """Extract client IP and user agent from request."""
-    # Try X-Forwarded-For header first (for proxies)
-    client_ip = request.headers.get("x-forwarded-for")
-    if client_ip:
-        client_ip = client_ip.split(",")[0].strip()
-    else:
-        # Fall back to direct connection
-        client_ip = request.client.host if request.client else "unknown"
+def get_client_info(
+    request: Request, trusted_proxies: list[str] | None = None
+) -> tuple[str, str]:
+    """Extract client IP and user agent from request.
+
+    X-Forwarded-For is only honored when the direct peer is a configured
+    trusted proxy; otherwise it is trivially spoofable and would let
+    clients bypass per-key IP restrictions.
+    """
+    direct_ip = request.client.host if request.client else "unknown"
+
+    client_ip = direct_ip
+    if trusted_proxies and direct_ip in trusted_proxies:
+        forwarded_for = request.headers.get("x-forwarded-for")
+        if forwarded_for:
+            client_ip = forwarded_for.split(",")[0].strip()
 
     user_agent = request.headers.get("user-agent", "unknown")
     return client_ip, user_agent
@@ -54,8 +63,9 @@ def validate_api_key(
 
     # Check each configured API key with constant-time comparison
     for idx, api_key_config in enumerate(config.security.api_keys):
-        # Use constant-time comparison to prevent timing attacks
-        if hmac.compare_digest(api_key_config.key, key):
+        # Use constant-time comparison to prevent timing attacks.
+        # Compare as bytes: compare_digest rejects non-ASCII str input.
+        if hmac.compare_digest(api_key_config.key.encode("utf-8"), key.encode("utf-8")):
             api_key_id = f"key_{idx}"
 
             # Check IP restrictions
@@ -138,7 +148,7 @@ def validate_api_key(
         },
     },
 )
-@limiter.limit("60 per minute")
+@limiter.limit(get_active_limits)
 async def upload_call(request: Request) -> Response:
     """Handle RdioScanner call upload from SDRTrunk.
 
@@ -148,7 +158,7 @@ async def upload_call(request: Request) -> Response:
     - key: API key for authentication
     - system: System ID (numeric string)
     - dateTime: Unix timestamp in seconds
-    - audio: Audio file (MP3, M4A, AAC, or WAV)
+    - audio: Audio file (MP3 by default; see file_handling.accepted_formats)
 
     **Optional metadata fields:**
     - frequency: Frequency in Hz
@@ -172,28 +182,18 @@ async def upload_call(request: Request) -> Response:
     file_handler: FileHandler = request.app.state.file_handler
 
     # Extract client info
-    client_ip, user_agent = get_client_info(request)
+    client_ip, user_agent = get_client_info(request, config.security.trusted_proxies)
 
     logger.info(f"RdioScanner upload request from {client_ip} - {user_agent}")
 
-    # Log raw request details
+    # Log request details (never log body content: it contains the API key)
     logger.debug(f"Request method: {request.method}")
     logger.debug(f"Request URL: {request.url}")
-    logger.debug(f"Request headers: {dict(request.headers)}")
 
     try:
-        # Parse request body
+        # Parse request body (buffered so the fallback parser can re-read it)
         raw_body = await request.body()
-
-        # Log raw body details
         logger.debug(f"Raw body length: {len(raw_body)} bytes")
-        logger.debug(f"Raw body first 1000 chars: {raw_body[:1000]!r}")
-        if len(raw_body) <= 10000:  # Only log full body if it's reasonably small
-            logger.debug(f"Full raw body: {raw_body!r}")
-        else:
-            logger.debug(
-                f"Raw body too large to log fully, showing first 10KB: {raw_body[:10240]!r}"
-            )
 
         # Try FastAPI's built-in form parsing first
         form_data: dict[str, Any] = {}
@@ -205,9 +205,7 @@ async def upload_call(request: Request) -> Response:
 
             # Convert to our expected format
             for key, value in fastapi_form.items():
-                logger.debug(
-                    f"Processing form field '{key}': type={type(value)}, value={str(value)[:100] if not hasattr(value, 'filename') else f'UploadFile({value.filename})'}"
-                )
+                logger.debug(f"Processing form field '{key}': type={type(value)}")
                 # Check for both FastAPI and Starlette UploadFile types
                 if hasattr(value, "filename") and hasattr(value, "read"):
                     # It's an upload file
@@ -239,7 +237,7 @@ async def upload_call(request: Request) -> Response:
                 content_type, raw_body
             )
 
-            logger.debug(f"Manual parser extracted fields: {fields}")
+            logger.debug(f"Manual parser extracted fields: {list(fields.keys())}")
             logger.debug(
                 f"Manual parser extracted files: {[(name, {'filename': f['filename'], 'content_type': f['content_type'], 'size': len(f['content'])}) for name, f in files.items()]}"
             )
@@ -257,19 +255,18 @@ async def upload_call(request: Request) -> Response:
 
         # Extract fields
         logger.debug(f"Received form_data keys: {list(form_data.keys())}")
-        # Better logging for form data
+        # Log form data with the API key redacted
         form_data_repr = []
         for k, v in form_data.items():
-            if isinstance(v, str):
+            if k == "key":
+                form_data_repr.append((k, "***redacted***"))
+            elif isinstance(v, str):
                 if len(v) > 50:
                     form_data_repr.append((k, f"{v[:50]}..."))
                 else:
                     form_data_repr.append((k, v))
             elif isinstance(v, bytes):
-                if len(v) > 50:
-                    form_data_repr.append((k, f"{v[:50]!r}..."))
-                else:
-                    form_data_repr.append((k, repr(v)))
+                form_data_repr.append((k, f"<{len(v)} bytes>"))
             elif isinstance(v, SimpleUploadFile):
                 form_data_repr.append(
                     (k, f"SimpleUploadFile(filename={v.filename}, size={v.size})")
@@ -281,6 +278,22 @@ async def upload_call(request: Request) -> Response:
         key = str(form_data.get("key", ""))
         system = str(form_data.get("system", ""))
         test = form_data.get("test")
+
+        # Validate API key first - test requests must also authenticate,
+        # otherwise SDRTrunk's "Test" button reports success with a bad key
+        # and real uploads fail later with silent 401s.
+        is_valid, api_key_id = validate_api_key(config, key, system, client_ip)
+        if not is_valid:
+            await asyncio.to_thread(
+                db_ops.log_upload_attempt,
+                client_ip=client_ip,
+                success=False,
+                system_id=system,
+                user_agent=user_agent,
+                error_message="Invalid API key",
+                response_code=401,
+            )
+            raise HTTPException(status_code=401, detail="Invalid API key")
 
         # Handle test requests
         if test is not None:
@@ -296,24 +309,12 @@ async def upload_call(request: Request) -> Response:
             else:
                 return PlainTextResponse(message)
 
-        # Validate API key
-        is_valid, api_key_id = validate_api_key(config, key, system, client_ip)
-        if not is_valid:
-            db_ops.log_upload_attempt(
-                client_ip=client_ip,
-                success=False,
-                system_id=system,
-                user_agent=user_agent,
-                error_message="Invalid API key",
-                response_code=401,
-            )
-            raise HTTPException(status_code=401, detail="Invalid API key")
-
         # Extract and validate required fields
         dateTime_str = form_data.get("dateTime")
         if not system or not dateTime_str:
             error_msg = "Missing required fields: system and dateTime"
-            db_ops.log_upload_attempt(
+            await asyncio.to_thread(
+                db_ops.log_upload_attempt,
                 client_ip=client_ip,
                 success=False,
                 system_id=system,
@@ -330,7 +331,8 @@ async def upload_call(request: Request) -> Response:
             # For non-test requests, audio is required
             if config.processing.mode != "log_only":
                 error_msg = "Audio file is required"
-                db_ops.log_upload_attempt(
+                await asyncio.to_thread(
+                    db_ops.log_upload_attempt,
                     client_ip=client_ip,
                     success=False,
                     system_id=system,
@@ -341,31 +343,64 @@ async def upload_call(request: Request) -> Response:
                 )
                 raise HTTPException(status_code=400, detail=error_msg)
 
-        # Create upload data model
-        upload_data = RdioScannerUpload(
-            key=key,
-            system=system,
-            dateTime=int(dateTime_str),
-            audio_filename=audio.filename if audio else None,
-            audio_content_type=audio.content_type if audio else None,
-            audio_size=audio.size if audio else None,
-            frequency=(
-                int(form_data["frequency"]) if form_data.get("frequency") else None
-            ),
-            talkgroup=(
-                int(form_data["talkgroup"]) if form_data.get("talkgroup") else None
-            ),
-            source=int(form_data["source"]) if form_data.get("source") else None,
-            systemLabel=form_data.get("systemLabel"),
-            talkgroupLabel=form_data.get("talkgroupLabel"),
-            talkgroupGroup=form_data.get("talkgroupGroup"),
-            talkerAlias=form_data.get("talkerAlias"),
-            patches=form_data.get("patches"),
-            frequencies=form_data.get("frequencies"),
-            sources=form_data.get("sources"),
-            talkgroupTag=form_data.get("talkgroupTag"),
-            test=int(test) if test is not None else None,
-        )
+        # Create upload data model. Client-supplied values that fail
+        # validation are a 400, not a 500.
+        try:
+            upload_data = RdioScannerUpload(
+                key=key,
+                system=system,
+                dateTime=int(dateTime_str),
+                audio_filename=audio.filename if audio else None,
+                audio_content_type=audio.content_type if audio else None,
+                audio_size=audio.size if audio else None,
+                frequency=(
+                    int(form_data["frequency"]) if form_data.get("frequency") else None
+                ),
+                talkgroup=(
+                    int(form_data["talkgroup"]) if form_data.get("talkgroup") else None
+                ),
+                source=int(form_data["source"]) if form_data.get("source") else None,
+                systemLabel=form_data.get("systemLabel"),
+                talkgroupLabel=form_data.get("talkgroupLabel"),
+                talkgroupGroup=form_data.get("talkgroupGroup"),
+                talkerAlias=form_data.get("talkerAlias"),
+                patches=form_data.get("patches"),
+                frequencies=form_data.get("frequencies"),
+                sources=form_data.get("sources"),
+                talkgroupTag=form_data.get("talkgroupTag"),
+                test=int(test) if test is not None else None,
+            )
+        except ValidationError as e:
+            first_error = e.errors()[0]
+            field = ".".join(str(part) for part in first_error.get("loc", ()))
+            error_msg = (
+                f"Invalid upload data: {field or 'request'}: "
+                f"{first_error.get('msg', 'invalid value')}"
+            )
+            await asyncio.to_thread(
+                db_ops.log_upload_attempt,
+                client_ip=client_ip,
+                success=False,
+                system_id=system,
+                api_key_used=api_key_id,
+                user_agent=user_agent,
+                error_message=error_msg,
+                response_code=400,
+            )
+            raise HTTPException(status_code=400, detail=error_msg) from None
+        except (ValueError, TypeError) as e:
+            error_msg = f"Invalid upload data: {e}"
+            await asyncio.to_thread(
+                db_ops.log_upload_attempt,
+                client_ip=client_ip,
+                success=False,
+                system_id=system,
+                api_key_used=api_key_id,
+                user_agent=user_agent,
+                error_message=error_msg,
+                response_code=400,
+            )
+            raise HTTPException(status_code=400, detail=error_msg) from None
 
         # Process based on mode
         stored_path: str | None = None
@@ -378,7 +413,8 @@ async def upload_call(request: Request) -> Response:
                 f"Freq={upload_data.frequency}, Time={upload_data.dateTime}"
             )
             # Still save to database even in log_only mode
-            call_id = db_ops.save_radio_call(
+            call_id = await asyncio.to_thread(
+                db_ops.save_radio_call,
                 upload_data,
                 audio_file_path=None,
                 upload_ip=client_ip,
@@ -388,14 +424,18 @@ async def upload_call(request: Request) -> Response:
         elif config.processing.mode in ["store", "process"]:
             # Validate and store audio file if provided
             if audio:
-                # Validate file
+                # Validate file; oversized files are 413, other problems 400
                 is_valid, error_msg_optional = file_handler.validate_file(
                     audio.filename, audio.content, audio.content_type
                 )
 
                 if not is_valid:
                     error_msg_str = error_msg_optional or "File validation failed"
-                    db_ops.log_upload_attempt(
+                    status_code = (
+                        413 if audio.size > file_handler.max_file_size_bytes else 400
+                    )
+                    await asyncio.to_thread(
+                        db_ops.log_upload_attempt,
                         client_ip=client_ip,
                         success=False,
                         system_id=system,
@@ -405,19 +445,20 @@ async def upload_call(request: Request) -> Response:
                         file_size=audio.size,
                         content_type=audio.content_type,
                         error_message=error_msg_str,
-                        response_code=400,
+                        response_code=status_code,
                     )
-                    raise HTTPException(status_code=400, detail=error_msg_str)
+                    raise HTTPException(status_code=status_code, detail=error_msg_str)
 
                 # Store file based on strategy
                 if config.file_handling.storage.strategy == "filesystem":
                     # Save to temp first
-                    temp_path = file_handler.save_temp_file(
-                        audio.filename, audio.content
+                    temp_path = await asyncio.to_thread(
+                        file_handler.save_temp_file, audio.filename, audio.content
                     )
 
                     # Move to permanent storage with verbose filename
-                    stored_path_obj = file_handler.store_file(
+                    stored_path_obj = await asyncio.to_thread(
+                        file_handler.store_file,
                         temp_path,
                         system,
                         datetime.fromtimestamp(upload_data.dateTime, tz=UTC),
@@ -439,7 +480,8 @@ async def upload_call(request: Request) -> Response:
                 # else "discard" - don't store the file
 
             # Save to database
-            call_id = db_ops.save_radio_call(
+            call_id = await asyncio.to_thread(
+                db_ops.save_radio_call,
                 upload_data,
                 audio_file_path=stored_path,
                 upload_ip=client_ip,
@@ -452,7 +494,8 @@ async def upload_call(request: Request) -> Response:
 
         # Log successful upload
         processing_time = (time.time() - start_time) * 1000
-        db_ops.log_upload_attempt(
+        await asyncio.to_thread(
+            db_ops.log_upload_attempt,
             client_ip=client_ip,
             success=True,
             system_id=system,
@@ -465,13 +508,12 @@ async def upload_call(request: Request) -> Response:
             processing_time_ms=processing_time,
         )
 
-        # Return response
+        # Return response. callId is the database id so clients can fetch
+        # the call back via /api/calls/{callId}.
         response_data = CallUploadResponse(
             status="ok",
             message="Call received and processed",
-            callId=(
-                f"{system}_{upload_data.dateTime}_{upload_data.talkgroup or 'unknown'}"
-            ),
+            callId=str(call_id) if call_id is not None else None,
         )
 
         # Check if client wants JSON
@@ -489,7 +531,8 @@ async def upload_call(request: Request) -> Response:
         # Log failed attempt
         try:
             processing_time = (time.time() - start_time) * 1000
-            db_ops.log_upload_attempt(
+            await asyncio.to_thread(
+                db_ops.log_upload_attempt,
                 client_ip=client_ip,
                 success=False,
                 user_agent=user_agent,

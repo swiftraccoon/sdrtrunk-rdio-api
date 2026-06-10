@@ -29,7 +29,7 @@
 - **ALWAYS** run tests after making changes: `uv run pytest`
 - **ALWAYS** run formatting: `uv run black . && uv run isort .`
 - **ALWAYS** run linting: `uv run ruff check .`
-- **ALWAYS** run type checking: `uv run mypy src`
+- **ALWAYS** run type checking: `uv run mypy src cli.py` (cli.py is outside src/ and missed by `make check`)
 - **NEVER** consider a task complete until all checks pass
 
 ### 5. Documentation Standards
@@ -106,7 +106,7 @@ Before considering ANY task complete:
 - [ ] All tests pass: `uv run pytest`
 - [ ] Code is formatted: `uv run black . && uv run isort .`
 - [ ] No linting errors: `uv run ruff check .`
-- [ ] Type checking passes: `uv run mypy src`
+- [ ] Type checking passes: `uv run mypy src cli.py`
 - [ ] Documentation is updated and accurate
 - [ ] No functionality has been broken
 - [ ] Security implications have been considered
@@ -127,6 +127,24 @@ Before considering ANY task complete:
 5. **Logging**: Use structured logging with appropriate levels. ALWAYS log errors with full context.
 
 6. **File Handling**: Use the FileHandler class for all file operations. NEVER bypass the file handling abstraction.
+
+### Implementation Invariants (learned from production fixes)
+
+7. **Timestamps**: Always `datetime.now(UTC)` - never naive `now()` or `utcnow()`. SQLite strips tzinfo, so the DB holds naive UTC; a local-time filter silently skews windows.
+
+8. **Transactions**: The engine uses `isolation_level=None` plus a "begin" event listener (connection.py) so rollback works. `VACUUM`/`wal_checkpoint` cannot run in a transaction - use `engine.raw_connection()`. Sessions are `expire_on_commit=False` because callers read ORM objects after close.
+
+9. **Rate limits**: slowapi `limiter` is a module-level singleton; endpoints MUST use `@limiter.limit(get_active_limits)` (callable, reads config) - a hardcoded string freezes at import time and ignores config.
+
+10. **Config template duplication is deliberate**: `cli.CONFIG_TEMPLATE` and `config/config.example.yaml` must be updated together (`init` writes the template).
+
+11. **Blocking work in endpoints**: query handlers are sync `def` (FastAPI threadpool); the upload handler is async and must wrap DB/file calls in `asyncio.to_thread`.
+
+12. **Retention logic** lives in `src/utils/maintenance.py`, shared by the server's background task and `cli clean` - change it in one place only.
+
+13. **CLI global flags**: `-c`/`--log-level` are defined on the main parser AND on each subparser via the `global_args` parent (SUPPRESS defaults) so both flag orders work. New subcommands must pass `parents=[global_args]`.
+
+14. **Test isolation**: conftest sets `cleanup_interval_hours: 0` - the maintenance task would otherwise delete old-dated test uploads mid-test. Rate-limit tests need a unique `x-api-key` per test (shared global bucket state). Error contract: client input errors are 400/413, never 500; test-mode uploads authenticate.
 
 ## Final Reminder
 

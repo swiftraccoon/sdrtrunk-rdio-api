@@ -85,26 +85,36 @@ This might take a minute or two the first time.
 ### Step 5: Create Your Configuration
 
 ```bash
-# Generate a sample config file
+# Generate your config file at config/config.yaml
 uv run sdrtrunk-rdio-api init
-
-# Copy it to become your main config
-cp config.example.yaml config.yaml
 ```
+
+You should see:
+
+```
+[SUCCESS] Generated configuration at config/config.yaml
+```
+
+(If it says the file already exists, you've done this before - just move on
+to the next step and edit the existing file.)
 
 ### Step 6: Edit Your Configuration
 
-Open `config.yaml` in any text editor (Notepad, TextEdit, etc.) and change:
+Open `config/config.yaml` in any text editor (Notepad, TextEdit, etc.).
+Find the `security:` section - the API key lines are commented out with `#`.
+Remove the `#` characters and set your own key so it looks like this:
 
 ```yaml
-# Find the security section and change this:
 security:
   api_keys:
     - key: "your-secret-api-key-here"  # Change this to something unique
       description: "My SDRTrunk Setup"
+      allowed_ips: []
+      allowed_systems: []
 ```
 
 **Important**: Make your API key something only you know, like `my-scanner-2025-secret`.
+Keep the two-space indentation exactly as shown - YAML is picky about that.
 
 ### Step 7: Test the Server
 
@@ -115,18 +125,22 @@ uv run sdrtrunk-rdio-api serve
 You should see:
 
 ```
-🚀 Starting sdrtrunk-rdio-api Server
-├─ Address: http://0.0.0.0:8080
-├─ HTTP/2: Enabled (required for SDRTrunk)
-├─ Processing Mode: store
-├─ Debug Mode: False
-├─ API Docs: http://0.0.0.0:8080/docs
-├─ Database: data/rdio_calls.db
-├─ Audio Storage: data/audio
-└─ API Keys: 1 configured
+>> Starting sdrtrunk-rdio-api Server
+  - Config: config/config.yaml
+  - Address: http://0.0.0.0:8080
+  - HTTP/2: Enabled (required for SDRTrunk)
+  - Processing Mode: store
+  - Debug Mode: False
+  - API Docs: http://0.0.0.0:8080/docs
+  - Database: data/rdio_calls.db
+  - Audio Storage: data/audio
+  - API Keys: 1 configured
 
 Press Ctrl+C to stop the server
 ```
+
+If the Config line says `NOT FOUND - using built-in defaults!`, the server
+could not find your config file - make sure it's at `config/config.yaml`.
 
 Great! Your server is running. Keep this window open and open a new terminal/command prompt for the next steps.
 
@@ -142,7 +156,7 @@ You should see something like:
 {
   "status": "healthy",
   "timestamp": "2025-01-15T10:30:00Z",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "database": "connected"
 }
 ```
@@ -162,6 +176,8 @@ Now we need to tell SDRTrunk to send audio files to your server:
    - **API Key**: `your-secret-api-key-here` (whatever you put in config.yaml)
    - **System ID**: `1` (or whatever number represents your radio system)
 7. **Click "Test"** - you should see "Test successful!"
+   (The test checks your API key, so if the key is wrong you'll find out
+   here rather than after calls silently fail.)
 8. **Click "Save"**
 
 ### Step 10: Start Recording
@@ -192,7 +208,7 @@ When SDRTrunk receives radio transmissions:
 
 ## File Organization
 
-Your audio files will be organized like this:
+Your audio files will be organized like this (dates and times are UTC):
 
 ```
 data/audio/
@@ -200,10 +216,13 @@ data/audio/
 │   ├── 01/
 │   │   ├── 15/
 │   │   │   ├── 1/           # System ID 1
-│   │   │   │   ├── 20250115_143022_TG100.mp3
-│   │   │   │   ├── 20250115_143045_TG200.mp3
+│   │   │   │   ├── 20250115_143022_SYS1_TG100_Dispatch.mp3
+│   │   │   │   ├── 20250115_143045_SYS1_TG200_Fire_Ops.mp3
 │   │   │   │   └── ...
 ```
+
+Filenames include all the metadata that was available: timestamp, system,
+talkgroup (with label), frequency, and source radio.
 
 ## Useful Commands
 
@@ -274,7 +293,9 @@ To stop the server, go back to the terminal where it's running and press `Ctrl+C
 Once everything is working:
 
 1. Consider setting up the server to start automatically (see the main README)
-2. Set up file cleanup to manage disk space (`uv run sdrtrunk-rdio-api clean --help`)
+2. Old recordings are cleaned up automatically based on `retention_days` in
+   your config (default: 30 days). You can also clean manually:
+   `uv run sdrtrunk-rdio-api clean --days 30 --dry-run`
 3. Explore the statistics and export features
 4. Consider setting up multiple API keys for different SDRTrunk instances
 

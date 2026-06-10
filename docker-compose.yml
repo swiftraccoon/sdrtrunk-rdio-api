@@ -4,7 +4,11 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./config/config.yaml:/app/config/config.yaml:ro
+      # Create config/config.yaml first (run `sdrtrunk-rdio-api init` or
+      # copy config/config.example.yaml). Mounting the directory instead
+      # of the file avoids Docker creating a directory named config.yaml
+      # when the file is missing.
+      - ./config:/app/config:ro
       - audio-data:/app/data
       - logs:/app/logs
     restart: unless-stopped

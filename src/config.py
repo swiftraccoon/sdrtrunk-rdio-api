@@ -4,7 +4,9 @@ import logging
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator
+
+from .exceptions import ConfigurationError
 
 logger = logging.getLogger(__name__)
 
@@ -37,17 +39,19 @@ class DatabaseConfig(BaseModel):
 
     path: str = Field("data/rdio_calls.db", description="SQLite database path")
     enable_wal: bool = Field(True, description="Enable Write-Ahead Logging")
-    pool_size: int = Field(5, description="Connection pool size")
-    max_overflow: int = Field(10, description="Max overflow connections")
 
 
 class RateLimitConfig(BaseModel):
-    """Rate limiting configuration."""
+    """Rate limiting configuration.
+
+    Defaults are sized for busy trunked systems: a system uploading
+    several calls per second must not lose calls to 429 responses.
+    """
 
     enabled: bool = Field(True, description="Enable rate limiting")
-    max_requests_per_minute: int = Field(60, description="Max requests per minute")
-    max_requests_per_hour: int = Field(1000, description="Max requests per hour")
-    max_requests_per_day: int = Field(10000, description="Max requests per day")
+    max_requests_per_minute: int = Field(600, description="Max requests per minute")
+    max_requests_per_hour: int = Field(10000, description="Max requests per hour")
+    max_requests_per_day: int = Field(100000, description="Max requests per day")
 
 
 class SecurityConfig(BaseModel):
@@ -55,6 +59,13 @@ class SecurityConfig(BaseModel):
 
     api_keys: list[APIKeyConfig] = Field(
         default_factory=list, description="API key configurations"
+    )
+    trusted_proxies: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Client IPs (reverse proxies) whose X-Forwarded-For header is "
+            "trusted. Empty list means X-Forwarded-For is never trusted."
+        ),
     )
     # Pydantic V2 has a known mypy issue with default_factory class constructors
     # https://github.com/pydantic/pydantic/issues/6713
@@ -71,7 +82,16 @@ class FileStorageConfig(BaseModel):
         "data/audio", description="Storage directory for filesystem strategy"
     )
     organize_by_date: bool = Field(True, description="Organize files by date")
-    retention_days: int = Field(30, description="File retention in days (0 = forever)")
+    retention_days: int = Field(
+        30, description="Delete calls older than this many days (0 = keep forever)"
+    )
+    cleanup_interval_hours: int = Field(
+        6,
+        description=(
+            "How often the server runs retention and temp-file cleanup "
+            "(0 = disable background cleanup)"
+        ),
+    )
 
     @field_validator("strategy")
     @classmethod
@@ -97,24 +117,6 @@ class ProcessingConfig(BaseModel):
     """Data processing configuration."""
 
     mode: str = Field("store", description="Processing mode: log_only, store, process")
-    store_fields: list[str] = Field(
-        default_factory=lambda: [
-            "timestamp",
-            "system",
-            "frequency",
-            "talkgroup",
-            "source",
-            "systemLabel",
-            "talkgroupLabel",
-            "talkgroupGroup",
-            "talkerAlias",
-            "audio_filename",
-            "audio_size",
-            "upload_ip",
-            "upload_timestamp",
-        ],
-        description="Fields to store in database",
-    )
 
     @field_validator("mode")
     @classmethod
@@ -176,22 +178,12 @@ class MetricsConfig(BaseModel):
     path: str = Field("/metrics", description="Metrics path")
 
 
-class StatisticsConfig(BaseModel):
-    """Statistics tracking configuration."""
-
-    enabled: bool = Field(True, description="Enable statistics tracking")
-    track_sources: bool = Field(True, description="Track upload sources")
-    track_systems: bool = Field(True, description="Track system statistics")
-    track_talkgroups: bool = Field(True, description="Track talkgroup statistics")
-
-
 class MonitoringConfig(BaseModel):
     """Monitoring configuration."""
 
     # Pydantic V2 mypy limitation with class constructors in default_factory
     health_check: HealthCheckConfig = Field(default_factory=HealthCheckConfig)  # type: ignore[arg-type]
     metrics: MetricsConfig = Field(default_factory=MetricsConfig)  # type: ignore[arg-type]
-    statistics: StatisticsConfig = Field(default_factory=StatisticsConfig)  # type: ignore[arg-type]
 
 
 class Config(BaseModel):
@@ -210,11 +202,18 @@ class Config(BaseModel):
     def load_from_file(cls, config_path: str) -> "Config":
         """Load configuration from YAML file.
 
+        A missing file falls back to documented defaults. A file that
+        exists but cannot be parsed or validated raises ConfigurationError:
+        silently falling back would start the server with no API keys.
+
         Args:
             config_path: Path to configuration file
 
         Returns:
             Config instance
+
+        Raises:
+            ConfigurationError: If the file exists but is invalid
         """
         config_path_obj = Path(config_path)
 
@@ -227,15 +226,20 @@ class Config(BaseModel):
         try:
             with open(config_path_obj) as f:
                 data = yaml.safe_load(f) or {}
+        except (yaml.YAMLError, OSError) as e:
+            raise ConfigurationError(
+                f"Could not read config file {config_path_obj}: {e}"
+            ) from e
 
+        try:
             config = cls(**data)
-            logger.info(f"Loaded configuration from {config_path_obj}")
-            return config
+        except ValidationError as e:
+            raise ConfigurationError(
+                f"Invalid configuration in {config_path_obj}: {e}"
+            ) from e
 
-        except Exception as e:
-            logger.error(f"Failed to load config from {config_path_obj}: {e}")
-            logger.info("Using default configuration")
-            return cls()
+        logger.info(f"Loaded configuration from {config_path_obj}")
+        return config
 
     def save_to_file(self, config_path: str) -> None:
         """Save configuration to YAML file.
@@ -248,7 +252,9 @@ class Config(BaseModel):
 
         try:
             with open(config_path_obj, "w") as f:
-                yaml.dump(self.dict(), f, default_flow_style=False, sort_keys=False)
+                yaml.dump(
+                    self.model_dump(), f, default_flow_style=False, sort_keys=False
+                )
 
             logger.info(f"Saved configuration to {config_path_obj}")
 

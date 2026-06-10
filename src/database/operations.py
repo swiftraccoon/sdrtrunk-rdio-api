@@ -200,7 +200,7 @@ class DatabaseOperations:
             stats["total_calls"] = session.query(RadioCall).count()
 
             # Calls today
-            today_start = datetime.now().replace(
+            today_start = datetime.now(UTC).replace(
                 hour=0, minute=0, second=0, microsecond=0
             )
             stats["calls_today"] = (
@@ -210,7 +210,7 @@ class DatabaseOperations:
             )
 
             # Calls last hour
-            hour_ago = datetime.now() - timedelta(hours=1)
+            hour_ago = datetime.now(UTC) - timedelta(hours=1)
             stats["calls_last_hour"] = (
                 session.query(RadioCall)
                 .filter(RadioCall.call_timestamp >= hour_ago)
@@ -286,37 +286,68 @@ class DatabaseOperations:
 
         return stats
 
+    def count_calls_older_than(self, cutoff: datetime) -> int:
+        """Count radio calls older than the cutoff."""
+        with self.db_manager.get_session() as session:
+            return int(
+                session.query(RadioCall)
+                .filter(RadioCall.call_timestamp < cutoff)
+                .count()
+            )
+
+    def count_upload_logs_older_than(self, cutoff: datetime) -> int:
+        """Count upload log entries older than the cutoff."""
+        with self.db_manager.get_session() as session:
+            return int(
+                session.query(UploadLog).filter(UploadLog.timestamp < cutoff).count()
+            )
+
+    def get_audio_paths_older_than(self, cutoff: datetime) -> list[str]:
+        """Get stored audio file paths for calls older than the cutoff."""
+        with self.db_manager.get_session() as session:
+            rows = (
+                session.query(RadioCall.audio_file_path)
+                .filter(RadioCall.call_timestamp < cutoff)
+                .filter(RadioCall.audio_file_path.isnot(None))
+                .all()
+            )
+            return [row[0] for row in rows]
+
+    def delete_calls_older_than(self, cutoff: datetime) -> int:
+        """Delete radio calls older than the cutoff. Returns rows deleted."""
+        with self.db_manager.get_session() as session:
+            deleted = (
+                session.query(RadioCall)
+                .filter(RadioCall.call_timestamp < cutoff)
+                .delete()
+            )
+            session.commit()
+            return int(deleted)
+
+    def delete_upload_logs_older_than(self, cutoff: datetime) -> int:
+        """Delete upload logs older than the cutoff. Returns rows deleted."""
+        with self.db_manager.get_session() as session:
+            deleted = (
+                session.query(UploadLog).filter(UploadLog.timestamp < cutoff).delete()
+            )
+            session.commit()
+            return int(deleted)
+
     def cleanup_old_data(self, days_to_keep: int) -> None:
         """Clean up old data from the database.
 
         Args:
             days_to_keep: Number of days of data to keep
         """
-        cutoff_date = datetime.now() - timedelta(days=days_to_keep)
+        cutoff_date = datetime.now(UTC) - timedelta(days=days_to_keep)
 
-        with self.db_manager.get_session() as session:
-            # Delete old radio calls
-            deleted_calls = (
-                session.query(RadioCall)
-                .filter(RadioCall.call_timestamp < cutoff_date)
-                .delete()
-            )
+        deleted_calls = self.delete_calls_older_than(cutoff_date)
+        deleted_logs = self.delete_upload_logs_older_than(cutoff_date)
 
-            # Delete old upload logs
-            deleted_logs = (
-                session.query(UploadLog)
-                .filter(UploadLog.timestamp < cutoff_date)
-                .delete()
-            )
+        logger.info(f"Cleaned up old data: {deleted_calls} calls, {deleted_logs} logs")
 
-            session.commit()
-
-            logger.info(
-                f"Cleaned up old data: {deleted_calls} calls, {deleted_logs} logs"
-            )
-
-            # Vacuum database to reclaim space
-            self.db_manager.vacuum()
+        # Vacuum database to reclaim space
+        self.db_manager.vacuum()
 
     def query_calls(
         self,
@@ -461,35 +492,51 @@ class DatabaseOperations:
                 .all()
             )
 
-            result = []
-            for system in systems:
-                # Get top talkgroups for this system
-                top_tgs = (
-                    session.query(
-                        RadioCall.talkgroup_id, func.count(RadioCall.id).label("count")
-                    )
-                    .filter(RadioCall.system_id == system.system_id)
-                    .filter(RadioCall.talkgroup_id.isnot(None))
-                    .group_by(RadioCall.talkgroup_id)
-                    .order_by(desc("count"))
-                    .limit(10)
-                    .all()
+            # Top talkgroups for all systems in one window-function query
+            # instead of one query per system (N+1).
+            rank = (
+                func.row_number()
+                .over(
+                    partition_by=RadioCall.system_id,
+                    order_by=desc(func.count(RadioCall.id)),
                 )
-
-                top_talkgroups = {str(tg_id): count for tg_id, count in top_tgs}
-
-                result.append(
-                    {
-                        "system_id": system.system_id,
-                        "system_label": system.system_label,
-                        "total_calls": system.total_calls,
-                        "first_seen": system.first_seen,
-                        "last_seen": system.last_seen,
-                        "top_talkgroups": top_talkgroups,
-                    }
+                .label("rank")
+            )
+            tg_counts = (
+                session.query(
+                    RadioCall.system_id.label("system_id"),
+                    RadioCall.talkgroup_id.label("talkgroup_id"),
+                    func.count(RadioCall.id).label("count"),
+                    rank,
                 )
+                .filter(RadioCall.talkgroup_id.isnot(None))
+                .group_by(RadioCall.system_id, RadioCall.talkgroup_id)
+                .subquery()
+            )
+            top_rows = (
+                session.query(tg_counts)
+                .filter(tg_counts.c.rank <= 10)
+                .order_by(tg_counts.c.system_id, tg_counts.c.rank)
+                .all()
+            )
 
-            return result
+            top_by_system: dict[str, dict[str, int]] = {}
+            for row in top_rows:
+                top_by_system.setdefault(row.system_id, {})[
+                    str(row.talkgroup_id)
+                ] = row.count
+
+            return [
+                {
+                    "system_id": system.system_id,
+                    "system_label": system.system_label,
+                    "total_calls": system.total_calls,
+                    "first_seen": system.first_seen,
+                    "last_seen": system.last_seen,
+                    "top_talkgroups": top_by_system.get(system.system_id, {}),
+                }
+                for system in systems
+            ]
 
     def get_talkgroups_summary(
         self, system_id: str | None = None, min_calls: int = 1

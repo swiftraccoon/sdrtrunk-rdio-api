@@ -92,8 +92,8 @@ class RdioScannerUpload(BaseModel):
             return v
         if v <= 0:
             raise ValueError("Frequency must be positive")
-        # Reasonable frequency range: 25 MHz to 6 GHz
-        if v < 25_000_000 or v > 6_000_000_000:
+        # Sanity cap only; HF/shortwave below 25 MHz is legitimate
+        if v > 6_000_000_000:
             raise ValueError(f"Frequency out of reasonable range: {v} Hz")
         return v
 
@@ -158,9 +158,7 @@ class RdioScannerUpload(BaseModel):
             return v
         if v <= 0:
             raise ValueError("Audio size must be positive")
-        # Max 100MB
-        if v > 100 * 1024 * 1024:
-            raise ValueError(f"Audio file too large: {v} bytes")
+        # Size limits are enforced against config by FileHandler.validate_file
         return v
 
 

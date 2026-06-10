@@ -95,22 +95,29 @@ uv sync
 ### Step 3: Create Your Configuration
 
 ```bash
-# Copy the example config
-cp config/config.example.yaml config/config.yaml
+# Generate config/config.yaml
+uv run sdrtrunk-rdio-api init
 ```
+
+(Equivalent: `cp config/config.example.yaml config/config.yaml`)
 
 ### Step 4: Set Your API Key
 
-Open `config/config.yaml` in any text editor (Notepad, TextEdit, etc.) and change this line:
+Open `config/config.yaml` in any text editor (Notepad, TextEdit, etc.),
+find the `security:` section, and un-comment the key lines:
 
 ```yaml
 security:
   api_keys:
     - key: "change-me-to-something-secret"  # ⚠️ CHANGE THIS!
       description: "My SDRTrunk"
+      allowed_ips: []
+      allowed_systems: []
 ```
 
 Pick any password you want - just remember it for SDRTrunk!
+
+> ⚠️ With no API keys configured, the server accepts uploads from anyone.
 
 ### Step 5: Start the Server
 
@@ -121,9 +128,11 @@ uv run sdrtrunk-rdio-api serve
 You should see:
 
 ```
-🚀 Starting sdrtrunk-rdio-api Server
-├─ Address: http://0.0.0.0:8080
-└─ API Keys: 1 configured
+>> Starting sdrtrunk-rdio-api Server
+  - Config: config/config.yaml
+  - Address: http://0.0.0.0:8080
+  ...
+  - API Keys: 1 configured
 
 Press Ctrl+C to stop the server
 ```
@@ -173,9 +182,15 @@ file_handling:
   storage:
     strategy: "filesystem"      # Where to store files
     directory: "data/audio"     # Storage folder
-    organize_by_date: true      # Organize into date folders
-    retention_days: 30          # Delete files older than this (0 = keep forever)
+    organize_by_date: true      # Organize into date folders (UTC dates)
+    retention_days: 30          # Delete calls older than this (0 = keep forever)
+    cleanup_interval_hours: 6   # How often the server enforces retention
 ```
+
+Retention is enforced automatically by the running server: calls older than
+`retention_days` are removed from the database together with their audio
+files and upload logs. You can also clean manually with
+`sdrtrunk-rdio-api clean`.
 
 ### Processing Modes
 
@@ -186,7 +201,7 @@ processing:
 
 - **`log_only`**: Just keep the information, don't save audio files
 - **`store`**: Save audio files and information (recommended)
-- **`process`**: Save everything and allow future processing
+- **`process`**: Currently behaves like `store` (reserved for future use)
 
 ### Security Options
 
@@ -197,11 +212,23 @@ security:
       description: "SDRTrunk in basement"
       allowed_ips: ["192.168.1.100"]    # Optional: only allow from this IP
       allowed_systems: ["1", "2"]       # Optional: only allow these system IDs
-  
+
+  # Only needed behind a reverse proxy: proxy IPs whose
+  # X-Forwarded-For header should be trusted for allowed_ips checks
+  trusted_proxies: []
+
   rate_limit:
     enabled: true
-    max_requests_per_minute: 60        # Prevent spam
+    max_requests_per_minute: 600       # Sized for busy trunked systems
+    max_requests_per_hour: 10000
+    max_requests_per_day: 100000
 ```
+
+> **Note**: API keys protect the upload endpoint. The query endpoints
+> (`/api/calls`, call audio, `/metrics`) are unauthenticated by design for
+> LAN use - anyone who can reach the port can browse recordings. Don't
+> expose the port to the internet without a reverse proxy providing
+> authentication.
 
 ## Troubleshooting
 
@@ -262,7 +289,8 @@ After=network.target
 Type=simple
 User=your-username
 WorkingDirectory=/path/to/rdioCallsAPI
-ExecStart=/home/your-username/.cargo/bin/uv run sdrtrunk-rdio-api serve
+# uv installs to ~/.local/bin by default; check with `which uv`
+ExecStart=/home/your-username/.local/bin/uv run sdrtrunk-rdio-api serve
 Restart=always
 RestartSec=10
 
@@ -282,9 +310,11 @@ sudo systemctl start rdiocalls
 
 If you're using nginx or Apache, the server works great behind a proxy. Just make sure to:
 
-1. Forward the correct headers
-2. Set appropriate timeouts for file uploads
-3. Configure SSL/TLS termination at the proxy level
+1. Forward the correct headers (`X-Forwarded-For` for client IPs)
+2. Add your proxy's IP to `security.trusted_proxies` in config.yaml,
+   otherwise `allowed_ips` restrictions will see the proxy's address
+3. Set appropriate timeouts for file uploads
+4. Configure SSL/TLS termination at the proxy level
 
 ### Multiple SDRTrunk Instances
 
@@ -305,9 +335,10 @@ security:
 
 ### Audio Files
 
-- **Location**: `data/audio/YYYY/MM/DD/SYSTEM/`
+- **Location**: `data/audio/YYYY/MM/DD/SYSTEM/` (UTC dates)
 - **Format**: MP3 files from SDRTrunk
-- **Naming**: `YYYYMMDD_HHMMSS_TG{talkgroup}.mp3`
+- **Naming**: `YYYYMMDD_HHMMSS_SYS{system}_TG{talkgroup}_{label}...mp3`
+  (includes frequency and source radio when available)
 
 ### Database Information
 

@@ -4,7 +4,7 @@
 import argparse
 import asyncio
 import sys
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +18,10 @@ from sqlalchemy import desc, func, select
 from src.api import create_app
 from src.config import Config, setup_logging
 from src.database.connection import DatabaseManager
+from src.database.operations import DatabaseOperations
 from src.models.database_models import RadioCall, UploadLog
+from src.utils.file_handler import FileHandler
+from src.utils.maintenance import run_retention_cleanup
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -48,7 +51,7 @@ Examples:
         """,
     )
 
-    # Global arguments
+    # Global arguments, accepted before the subcommand
     parser.add_argument(
         "-c",
         "--config",
@@ -62,11 +65,32 @@ Examples:
         help="Set logging level (overrides config file setting)",
     )
 
+    # The same flags must also work AFTER the subcommand (`serve -c x.yaml`),
+    # which is how the help examples show them. SUPPRESS keeps the
+    # subcommand-level flags from overwriting a value given before the
+    # subcommand when they are omitted.
+    global_args = argparse.ArgumentParser(add_help=False)
+    global_args.add_argument(
+        "-c",
+        "--config",
+        default=argparse.SUPPRESS,
+        help="Path to configuration file (default: config/config.yaml)",
+    )
+    global_args.add_argument(
+        "-l",
+        "--log-level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        default=argparse.SUPPRESS,
+        help="Set logging level (overrides config file setting)",
+    )
+
     # Subcommands
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # Serve command
-    serve_parser = subparsers.add_parser("serve", help="Start the API server")
+    serve_parser = subparsers.add_parser(
+        "serve", help="Start the API server", parents=[global_args]
+    )
     serve_parser.add_argument("--host", help="Override server host")
     serve_parser.add_argument("--port", type=int, help="Override server port")
     serve_parser.add_argument(
@@ -91,13 +115,13 @@ Examples:
 
     # Init command
     init_parser = subparsers.add_parser(
-        "init", help="Generate example configuration file"
+        "init", help="Generate example configuration file", parents=[global_args]
     )
     init_parser.add_argument(
         "-o",
         "--output",
-        default="config/config.example.yaml",
-        help="Output file path (default: config/config.example.yaml)",
+        default="config/config.yaml",
+        help="Output file path (default: config/config.yaml)",
     )
     init_parser.add_argument(
         "--force", action="store_true", help="Overwrite existing file"
@@ -105,7 +129,9 @@ Examples:
 
     # Stats command
     stats_parser = subparsers.add_parser(
-        "stats", help="View upload statistics and recent calls"
+        "stats",
+        help="View upload statistics and recent calls",
+        parents=[global_args],
     )
     stats_parser.add_argument(
         "--last", type=int, default=20, help="Number of recent calls to show"
@@ -115,11 +141,15 @@ Examples:
     stats_parser.add_argument("--hours", type=int, help="Show stats for last N hours")
 
     # Test DB command
-    subparsers.add_parser("test-db", help="Test database connection and show info")
+    subparsers.add_parser(
+        "test-db",
+        help="Test database connection and show info",
+        parents=[global_args],
+    )
 
     # Clean command
     clean_parser = subparsers.add_parser(
-        "clean", help="Clean old files and database records"
+        "clean", help="Clean old files and database records", parents=[global_args]
     )
     clean_parser.add_argument(
         "--days", type=int, default=30, help="Delete files older than N days"
@@ -127,9 +157,17 @@ Examples:
     clean_parser.add_argument(
         "--dry-run", action="store_true", help="Show what would be deleted"
     )
+    clean_parser.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="Skip the confirmation prompt (for scripts/cron)",
+    )
 
     # Export command
-    export_parser = subparsers.add_parser("export", help="Export calls data to CSV")
+    export_parser = subparsers.add_parser(
+        "export", help="Export calls data to CSV", parents=[global_args]
+    )
     export_parser.add_argument(
         "-o", "--output", default="calls_export.csv", help="Output CSV file"
     )
@@ -139,9 +177,8 @@ Examples:
     return parser
 
 
-async def serve_command(args: Any, config: Config) -> None:
-    """Run the server with given arguments."""
-    # Override config with CLI arguments
+def apply_serve_overrides(args: Any, config: Config) -> None:
+    """Apply serve CLI flags on top of the loaded configuration."""
     if args.host:
         config.server.host = args.host
     if args.port:
@@ -155,16 +192,20 @@ async def serve_command(args: Any, config: Config) -> None:
     if args.api_key:
         from src.config import APIKeyConfig
 
+        # Adds to any configured keys rather than replacing them
         config.security.api_keys = [
-            APIKeyConfig(
-                key=args.api_key,
-                description="CLI-provided API key",
-            )
+            *config.security.api_keys,
+            APIKeyConfig(key=args.api_key, description="CLI-provided API key"),
         ]
     if args.storage_dir:
         config.file_handling.storage.directory = args.storage_dir
     if args.db_path:
         config.database.path = args.db_path
+
+
+async def serve_command(args: Any, config: Config) -> None:
+    """Run the server with given arguments."""
+    apply_serve_overrides(args, config)
 
     # Create app
     app = create_app(config_path=args.config, override_config=config)
@@ -182,6 +223,11 @@ async def serve_command(args: Any, config: Config) -> None:
     hypercorn_config.errorlog = "-"
 
     print("\n>> Starting sdrtrunk-rdio-api Server")
+    config_file = Path(args.config)
+    if config_file.exists():
+        print(f"  - Config: {config_file}")
+    else:
+        print(f"  - Config: {config_file} NOT FOUND - using built-in defaults!")
     print(f"  - Address: http://{config.server.host}:{config.server.port}")
     print("  - HTTP/2: Enabled (required for SDRTrunk)")
     print(f"  - Processing Mode: {config.processing.mode}")
@@ -201,52 +247,53 @@ async def serve_command(args: Any, config: Config) -> None:
     await serve(app, hypercorn_config)  # type: ignore[arg-type]
 
 
-def init_command(args: Any) -> int:
-    """Generate example configuration file."""
-    output_path = Path(args.output)
-
-    if output_path.exists() and not args.force:
-        print(f"[ERROR] File {output_path} already exists. Use --force to overwrite.")
-        return 1
-
-    example_config = """# sdrtrunk-rdio-api Configuration
-# This is an example configuration file for the RdioScanner API ingestion server
+# Configuration template written by `init`. Kept in sync with
+# config/config.example.yaml - update both together.
+CONFIG_TEMPLATE = """\
+# sdrtrunk-rdio-api Configuration
+# Every option shown here is read by the server; defaults are sensible,
+# so you usually only need to set an API key.
 
 # API Server Configuration
 server:
+  # "0.0.0.0" listens on all interfaces; "127.0.0.1" is localhost-only
   host: "0.0.0.0"
   port: 8080
   cors_origins: ["*"]
+  # Interactive API docs at /docs (disable in production if unwanted)
   enable_docs: true
   debug: false
 
 # Database Configuration
 database:
-  # SQLite database file path
+  # SQLite database file path (directory is created automatically)
   path: "data/rdio_calls.db"
-  # Enable WAL mode for better concurrent performance
+  # Write-Ahead Logging improves concurrent performance
   enable_wal: true
-  # Database connection pool settings
-  pool_size: 5
-  max_overflow: 10
 
 # API Security Configuration
 security:
-  # API keys for authentication (leave empty for no authentication)
+  # API keys for authentication.
+  # WARNING: an empty list means uploads are accepted from ANYONE.
   api_keys: []
-  # Example with API key:
+  # Example:
   # api_keys:
   #   - key: "your-secret-key-here"
   #     description: "Main SDRTrunk node"
-  #     allowed_ips: []  # Empty means all IPs allowed
+  #     allowed_ips: []      # Empty means all IPs allowed
   #     allowed_systems: []  # Empty means all systems allowed
 
-  # Rate limiting
+  # Reverse proxy IPs whose X-Forwarded-For header should be trusted.
+  # Leave empty unless the server runs behind a proxy you control.
+  trusted_proxies: []
+
+  # Rate limiting (per client IP, or per x-api-key header if present).
+  # Defaults are sized so busy trunked systems never lose calls.
   rate_limit:
     enabled: true
-    max_requests_per_minute: 60
-    max_requests_per_hour: 1000
-    max_requests_per_day: 10000
+    max_requests_per_minute: 600
+    max_requests_per_hour: 10000
+    max_requests_per_day: 100000
 
 # File Handling Configuration
 file_handling:
@@ -262,36 +309,23 @@ file_handling:
 
   # Audio file storage
   storage:
-    # Storage strategy: "discard", "filesystem", "database"
+    # Storage strategy: "discard" (metadata only) or "filesystem"
     strategy: "filesystem"
     # For filesystem storage
     directory: "data/audio"
-    # Organize files by date
+    # Organize into YYYY/MM/DD/system subdirectories (UTC dates)
     organize_by_date: true
-    # File retention days (0 = keep forever)
+    # Delete calls (audio + metadata) older than this many days.
+    # 0 = keep forever. Enforced by the server periodically and by
+    # `sdrtrunk-rdio-api clean`.
     retention_days: 30
+    # How often the server runs retention/temp cleanup (0 = disable)
+    cleanup_interval_hours: 6
 
 # Data Processing Configuration
 processing:
-  # What to do with incoming calls
-  # Options: "log_only", "store", "process"
+  # "store" saves audio + metadata; "log_only" saves metadata only
   mode: "store"
-
-  # Fields to extract and store
-  store_fields:
-    - timestamp
-    - system
-    - frequency
-    - talkgroup
-    - source
-    - systemLabel
-    - talkgroupLabel
-    - talkgroupGroup
-    - talkerAlias
-    - audio_filename
-    - audio_size
-    - upload_ip
-    - upload_timestamp
 
 # Logging Configuration
 logging:
@@ -321,24 +355,23 @@ monitoring:
   metrics:
     enabled: true
     path: "/metrics"
-
-  # Statistics tracking
-  statistics:
-    enabled: true
-    # Track upload sources
-    track_sources: true
-    # Track system statistics
-    track_systems: true
-    # Track talkgroup statistics
-    track_talkgroups: true
 """
 
-    output_path.write_text(example_config)
-    print(f"[SUCCESS] Generated example configuration at {output_path}")
+
+def init_command(args: Any) -> int:
+    """Generate a configuration file."""
+    output_path = Path(args.output)
+
+    if output_path.exists() and not args.force:
+        print(f"[ERROR] File {output_path} already exists. Use --force to overwrite.")
+        return 1
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(CONFIG_TEMPLATE)
+    print(f"[SUCCESS] Generated configuration at {output_path}")
     print("\nNext steps:")
-    print(f"1. Copy to config.yaml: cp {output_path} config/config.yaml")
-    print("2. Edit config/config.yaml to match your setup")
-    print(f"3. Start the server: {sys.argv[0]} serve")
+    print(f"1. Edit {output_path} and set an API key under security.api_keys")
+    print("2. Start the server: sdrtrunk-rdio-api serve")
     return 0
 
 
@@ -349,7 +382,6 @@ def stats_command(args: Any, config: Config) -> int:
 
     # Create database manager
     db_manager = DatabaseManager(config.database)
-    db_manager._init_database()
 
     with db_manager.get_session() as session:
         # Build query
@@ -361,7 +393,7 @@ def stats_command(args: Any, config: Config) -> int:
         if args.talkgroup:
             query = query.filter(RadioCall.talkgroup_id == args.talkgroup)
         if args.hours:
-            cutoff = datetime.utcnow() - timedelta(hours=args.hours)
+            cutoff = datetime.now(UTC) - timedelta(hours=args.hours)
             query = query.filter(RadioCall.call_timestamp >= cutoff)
 
         # Limit results
@@ -448,7 +480,6 @@ def test_db_command(args: Any, config: Config) -> int:
     try:
         # Create database manager
         db_manager = DatabaseManager(config.database)
-        db_manager._init_database()
 
         with db_manager.get_session() as session:
             # Test query
@@ -482,60 +513,53 @@ def test_db_command(args: Any, config: Config) -> int:
 
 
 def clean_command(args: Any, config: Config) -> int:
-    """Clean old files and database records."""
+    """Clean old calls: database records, upload logs, and audio files."""
     # Setup logging
     setup_logging(config.logging)
 
-    cutoff_date = datetime.utcnow() - timedelta(days=args.days)
-    print(f">> Cleaning files and records older than {cutoff_date.date()}")
+    cutoff_date = datetime.now(UTC) - timedelta(days=args.days)
+    print(f">> Cleaning calls, logs, and audio older than {cutoff_date.date()} (UTC)")
+
+    db_manager = DatabaseManager(config.database)
+    db_ops = DatabaseOperations(db_manager)
+    file_handler = FileHandler(
+        storage_directory=config.file_handling.storage.directory,
+        temp_directory=config.file_handling.temp_directory,
+        organize_by_date=config.file_handling.storage.organize_by_date,
+        accepted_formats=config.file_handling.accepted_formats,
+        max_file_size_mb=config.file_handling.max_file_size_mb,
+        min_file_size_kb=config.file_handling.min_file_size_kb,
+    )
+
+    old_calls = db_ops.count_calls_older_than(cutoff_date)
+    old_logs = db_ops.count_upload_logs_older_than(cutoff_date)
+    audio_paths = db_ops.get_audio_paths_older_than(cutoff_date)
+
+    print(f"\nCalls to delete: {old_calls:,}")
+    print(f"Upload log entries to delete: {old_logs:,}")
+    print(f"Audio files to delete: {len(audio_paths):,}")
 
     if args.dry_run:
-        print("[DRY RUN] No files will be deleted")
+        print("\n[DRY RUN] Nothing was deleted")
+        return 0
 
-    # Count files to delete
-    audio_dir = Path(config.file_handling.storage.directory)
-    files_to_delete = []
-    total_size = 0
+    if old_calls == 0 and old_logs == 0 and not audio_paths:
+        print("\nNothing to clean.")
+        return 0
 
-    if audio_dir.exists():
-        for file in audio_dir.rglob("*.mp3"):
-            if datetime.fromtimestamp(file.stat().st_mtime) < cutoff_date:
-                files_to_delete.append(file)
-                total_size += file.stat().st_size
-
-    print(f"\nFiles to delete: {len(files_to_delete)}")
-    print(f"Total size: {total_size / (1024*1024):.2f} MB")
-
-    if not args.dry_run and files_to_delete:
+    if not getattr(args, "yes", False):
         confirm = input("\nProceed with deletion? (y/N): ")
-        if confirm.lower() == "y":
-            for file in files_to_delete:
-                file.unlink()
-            print(f"[SUCCESS] Deleted {len(files_to_delete)} files")
-        else:
+        if confirm.lower() != "y":
             print("[CANCELLED] Operation cancelled")
+            return 0
 
-    # Clean database records
-    db_manager = DatabaseManager(config.database)
-    db_manager._init_database()
-
-    with db_manager.get_session() as session:
-        # Count records to delete
-        old_calls = (
-            session.query(func.count(RadioCall.id))
-            .filter(RadioCall.call_timestamp < cutoff_date)
-            .scalar()
-        )
-
-        print(f"\nDatabase records to delete: {old_calls:,}")
-
-        if not args.dry_run and old_calls > 0:
-            if confirm.lower() == "y":
-                session.query(RadioCall).filter(
-                    RadioCall.call_timestamp < cutoff_date
-                ).delete()
-                session.commit()
-                print(f"[SUCCESS] Deleted {old_calls:,} database records")
+    summary = run_retention_cleanup(db_ops, file_handler, args.days, vacuum=True)
+    freed_mb = summary["freed_bytes"] / (1024 * 1024)
+    print(
+        f"[SUCCESS] Deleted {summary['deleted_calls']:,} calls, "
+        f"{summary['deleted_upload_logs']:,} upload logs, "
+        f"{summary['deleted_files']:,} files ({freed_mb:.2f} MB freed)"
+    )
 
     return 0
 
@@ -548,18 +572,17 @@ def export_command(args: Any, config: Config) -> int:
     setup_logging(config.logging)
 
     db_manager = DatabaseManager(config.database)
-    db_manager._init_database()
 
     with db_manager.get_session() as session:
         query = select(RadioCall).order_by(RadioCall.call_timestamp)
 
-        # Apply date filters
+        # Apply date filters (UTC dates; end date is inclusive)
         if args.start_date:
             start = datetime.strptime(args.start_date, "%Y-%m-%d")
             query = query.filter(RadioCall.call_timestamp >= start)
         if args.end_date:
-            end = datetime.strptime(args.end_date, "%Y-%m-%d")
-            query = query.filter(RadioCall.call_timestamp <= end)
+            end = datetime.strptime(args.end_date, "%Y-%m-%d") + timedelta(days=1)
+            query = query.filter(RadioCall.call_timestamp < end)
 
         calls = session.execute(query).scalars().all()
 
@@ -620,8 +643,19 @@ async def main() -> int:
         parser.print_help()
         return 1
 
-    # Load config
-    config = Config.load_from_file(args.config)
+    # init creates the config file, so don't try to load it first
+    if args.command == "init":
+        return init_command(args)
+
+    # Load config; a broken config file is a hard error, not a silent
+    # fallback to defaults (which would mean open access).
+    from src.exceptions import ConfigurationError
+
+    try:
+        config = Config.load_from_file(args.config)
+    except ConfigurationError as e:
+        print(f"[ERROR] {e}")
+        return 1
 
     # Override with log level argument
     if args.log_level:
@@ -631,8 +665,6 @@ async def main() -> int:
     if args.command == "serve":
         await serve_command(args, config)
         return 0
-    elif args.command == "init":
-        return init_command(args)
     elif args.command == "stats":
         return stats_command(args, config)
     elif args.command == "test-db":

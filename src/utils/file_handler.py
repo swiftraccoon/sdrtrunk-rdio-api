@@ -1,10 +1,11 @@
 """File handling utilities for audio file storage and management."""
 
 import logging
-import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+from .sanitize import sanitize_filename
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +119,7 @@ class FileHandler:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[
             :21
         ]  # Trim to 5 decimal places
-        safe_filename = f"{timestamp}_{Path(filename).name}"
+        safe_filename = f"{timestamp}_{sanitize_filename(filename)}"
 
         temp_path = self.temp_dir / safe_filename
 
@@ -219,19 +220,22 @@ class FileHandler:
         # Join all components with underscores
         base_filename = "_".join(components)
 
-        # Add file extension
-        filename = f"{base_filename}{temp_path.suffix}"
+        # Claim a unique name with exclusive create ('x' mode): a plain
+        # exists()-then-move check races when two identical calls arrive
+        # concurrently and one upload silently overwrites the other.
+        content = temp_path.read_bytes()
+        counter = 0
+        while True:
+            suffix = f"_DUP{counter}" if counter else ""
+            storage_path = storage_subdir / f"{base_filename}{suffix}{temp_path.suffix}"
+            try:
+                with open(storage_path, "xb") as f:
+                    f.write(content)
+                break
+            except FileExistsError:
+                counter += 1
 
-        # Handle duplicates by appending counter
-        storage_path = storage_subdir / filename
-        counter = 1
-        while storage_path.exists():
-            filename = f"{base_filename}_DUP{counter}{temp_path.suffix}"
-            storage_path = storage_subdir / filename
-            counter += 1
-
-        # Move file
-        shutil.move(str(temp_path), str(storage_path))
+        temp_path.unlink()
         logger.info(f"Stored file: {storage_path}")
 
         return storage_path
@@ -295,6 +299,67 @@ class FileHandler:
                 f"Cleaned up {cleaned} old files, freed {freed_space / (1024*1024):.2f} MB"
             )
         return cleaned, freed_space
+
+    def delete_files(self, paths: list[str]) -> tuple[int, int]:
+        """Delete specific stored files.
+
+        Paths outside the storage directory are refused, so corrupt or
+        malicious database rows cannot delete arbitrary files.
+
+        Args:
+            paths: Absolute or relative paths to delete
+
+        Returns:
+            Tuple of (files deleted, bytes freed)
+        """
+        storage_root = self.storage_dir.resolve()
+        deleted = 0
+        freed = 0
+
+        for path_str in paths:
+            try:
+                resolved = Path(path_str).resolve()
+                if not resolved.is_relative_to(storage_root):
+                    logger.warning(
+                        f"Refusing to delete file outside storage dir: {path_str}"
+                    )
+                    continue
+                size = resolved.stat().st_size
+                resolved.unlink()
+                deleted += 1
+                freed += size
+            except FileNotFoundError:
+                continue
+            except Exception as e:
+                logger.error(f"Failed to delete file {path_str}: {e}")
+
+        if deleted:
+            logger.info(f"Deleted {deleted} files, freed {freed / (1024*1024):.2f} MB")
+        return deleted, freed
+
+    def remove_empty_directories(self) -> int:
+        """Remove empty subdirectories left behind by file cleanup.
+
+        Returns:
+            Number of directories removed
+        """
+        removed = 0
+        # Deepest directories first so parents empty out as children go
+        directories = sorted(
+            (p for p in self.storage_dir.rglob("*") if p.is_dir()),
+            key=lambda p: len(p.parts),
+            reverse=True,
+        )
+        for directory in directories:
+            try:
+                directory.rmdir()  # only succeeds when empty
+                removed += 1
+            except OSError:
+                pass
+
+        if removed:
+            logger.info(f"Removed {removed} empty directories")
+        return removed
 
     def get_storage_stats(self) -> dict[str, Any]:
         """Get storage statistics.

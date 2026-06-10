@@ -23,7 +23,7 @@ class TestSanitizationFunctions:
 
     def test_sanitize_filename(self):
         """Test filename sanitization."""
-        from src.middleware.validation import sanitize_filename
+        from src.utils.sanitize import sanitize_filename
 
         # Test dangerous characters removal
         assert sanitize_filename("test<>file.mp3") == "test__file.mp3"
@@ -46,23 +46,6 @@ class TestSanitizationFunctions:
         result = sanitize_filename(long_name)
         assert len(result) <= 255
         assert result.endswith(".mp3")
-
-    def test_sanitize_string(self):
-        """Test string sanitization."""
-        from src.middleware.validation import sanitize_string
-
-        # Test control character removal
-        assert sanitize_string("test\x00string") == "teststring"
-        assert sanitize_string("test\nstring\r") == "teststring"
-
-        # Test length limiting
-        long_string = "a" * 300
-        result = sanitize_string(long_string, max_length=255)
-        assert len(result) == 255
-
-        # Test whitespace trimming
-        assert sanitize_string("  test  ") == "test"
-        assert sanitize_string("\t\ntest\r\n") == "test"
 
 
 class TestFileHandler:
@@ -326,7 +309,6 @@ class TestConfig:
             },
             "database": {
                 "path": "test.db",
-                "pool_size": 10,
             },
             "security": {
                 "api_keys": [],
@@ -373,7 +355,6 @@ class TestConfig:
 
         db = DatabaseConfig()
         assert db.path == "data/rdio_calls.db"
-        assert db.pool_size == 5
         assert db.enable_wal is True
 
         security = SecurityConfig()

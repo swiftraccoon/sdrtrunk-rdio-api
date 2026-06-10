@@ -35,11 +35,6 @@ RUN useradd -m -u 1000 rdio && \
     mkdir -p /app/data /app/logs && \
     chown -R rdio:rdio /app
 
-# Install runtime dependencies
-RUN apt-get update && apt-get install -y \
-    ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
-
 # Set working directory
 WORKDIR /app
 

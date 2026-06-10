@@ -102,33 +102,3 @@ class UploadLog(Base):
     # Response details
     response_code = Column(Integer, nullable=True)
     processing_time_ms = Column(Float, nullable=True)
-
-
-class SystemStats(Base):
-    """Aggregated statistics by system (updated periodically)."""
-
-    __tablename__ = "system_stats"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-
-    # System identification
-    system_id = Column(String(50), nullable=False, unique=True, index=True)
-    system_label = Column(String(255), nullable=True)
-
-    # Call statistics
-    total_calls = Column(Integer, default=0, nullable=False)
-    calls_today = Column(Integer, default=0, nullable=False)
-    calls_this_hour = Column(Integer, default=0, nullable=False)
-
-    # Timing
-    first_seen = Column(DateTime, nullable=True)
-    last_seen = Column(DateTime, nullable=True)
-
-    # Top talkgroups (JSON stored as text)
-    top_talkgroups = Column(Text, nullable=True)  # JSON: {"tg_id": count, ...}
-
-    # Upload sources
-    upload_sources = Column(Text, nullable=True)  # JSON: {"ip": count, ...}
-
-    # Update tracking
-    last_updated = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)

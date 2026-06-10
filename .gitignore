@@ -49,3 +49,5 @@ config.yaml
 .mypy_cache/
 .ruff_cache/
 logs/
+# Claude Code local notes
+.claude.local.md

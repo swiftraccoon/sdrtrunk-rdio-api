@@ -55,7 +55,9 @@ class DatabaseManager:
         self.engine = self._create_engine()
 
         # Create thread-safe session factory using scoped_session
-        session_factory = sessionmaker(bind=self.engine)
+        # expire_on_commit=False: callers receive objects from short-lived
+        # sessions and read attributes after the session closes.
+        session_factory = sessionmaker(bind=self.engine, expire_on_commit=False)
         self.Session = scoped_session(session_factory)
 
         # Initialize database
@@ -68,7 +70,6 @@ class DatabaseManager:
         # SQLite connection string
         connection_string = f"sqlite:///{self.database_path}"
 
-        # Create engine with connection pooling optimized for concurrent access
         # Use NullPool for better thread safety with SQLite
         engine = create_engine(
             connection_string,
@@ -77,9 +78,11 @@ class DatabaseManager:
             connect_args={
                 "check_same_thread": False,  # Allow multiple threads
                 "timeout": 30,  # Connection timeout in seconds
-                "isolation_level": None,  # Use autocommit mode for better concurrency
+                # Disable pysqlite's implicit transaction handling; the
+                # "begin" listener below issues BEGIN explicitly so that
+                # SQLAlchemy transactions (and rollback) actually work.
+                "isolation_level": None,
             },
-            pool_pre_ping=True,  # Verify connections before using
         )
 
         # Configure SQLite for better performance
@@ -93,11 +96,16 @@ class DatabaseManager:
 
             # Performance optimizations
             cursor.execute("PRAGMA synchronous=NORMAL")  # Faster writes
-            cursor.execute("PRAGMA cache_size=10000")  # Larger cache
             cursor.execute("PRAGMA temp_store=MEMORY")  # Use memory for temp tables
-            cursor.execute("PRAGMA mmap_size=30000000000")  # Memory-mapped I/O
+            cursor.execute("PRAGMA mmap_size=268435456")  # 256MB memory-mapped I/O
 
             cursor.close()
+
+        # Emit our own BEGIN: required with isolation_level=None, otherwise
+        # every statement autocommits and session.rollback() is a no-op.
+        @event.listens_for(engine, "begin")
+        def do_begin(conn: Any) -> None:
+            conn.exec_driver_sql("BEGIN")
 
         return engine
 
@@ -132,9 +140,9 @@ class DatabaseManager:
         session = self.Session()
         try:
             yield session
-            # Auto-commit if there are pending changes and no explicit commit was called
-            if session.new or session.dirty or session.deleted:
-                session.commit()
+            # Commit on clean exit; this also finalizes flushed-but-not-
+            # committed changes and cleanly ends read-only transactions.
+            session.commit()
         except Exception:
             session.rollback()
             raise
@@ -153,6 +161,19 @@ class DatabaseManager:
         self.engine.dispose()
         logger.info("Database connections closed")
 
+    def check_connection(self) -> bool:
+        """Cheap connectivity check (used by the health endpoint).
+
+        Unlike get_stats, this does not scan any tables.
+        """
+        try:
+            with self.engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            return True
+        except Exception:
+            logger.exception("Database connectivity check failed")
+            return False
+
     def get_stats(self) -> dict[str, Any]:
         """Get database statistics."""
         stats: dict[str, Any] = {}
@@ -165,26 +186,28 @@ class DatabaseManager:
                 stats["size_mb"] = 0
 
             # Get table row counts
-            from ..models.database_models import (
-                RadioCall,
-                SystemStats,
-                UploadLog,
-            )
+            from ..models.database_models import RadioCall, UploadLog
 
             tables: dict[str, int] = {
                 "radio_calls": int(session.query(RadioCall).count()),
                 "upload_logs": int(session.query(UploadLog).count()),
-                "system_stats": int(session.query(SystemStats).count()),
             }
             stats["tables"] = tables
 
         return stats
 
     def vacuum(self) -> None:
-        """Vacuum database to reclaim space."""
+        """Vacuum database to reclaim space.
+
+        Uses a raw DBAPI connection: VACUUM cannot run inside the
+        transaction that the engine's begin listener would open.
+        """
         try:
-            with self.engine.connect() as conn:
-                conn.execute(text("VACUUM"))
+            raw = self.engine.raw_connection()
+            try:
+                raw.cursor().execute("VACUUM")
+            finally:
+                raw.close()
             logger.info("Database vacuumed successfully")
         except Exception as e:
             logger.error(f"Failed to vacuum database: {e}")
@@ -204,9 +227,13 @@ class DatabaseManager:
         try:
             # For SQLite, we can just copy the file
             # But first, checkpoint the WAL file if using WAL mode
+            # (raw connection: checkpointing must run outside a transaction)
             if self.enable_wal:
-                with self.engine.connect() as conn:
-                    conn.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
+                raw = self.engine.raw_connection()
+                try:
+                    raw.cursor().execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                finally:
+                    raw.close()
 
             # Copy the database file
             shutil.copy2(self.database_path, backup_path_obj)

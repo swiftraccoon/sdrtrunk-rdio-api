@@ -4,6 +4,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from src import __version__
+
 
 class TestHealthEndpoints:
     """Tests for health check and metrics endpoints."""
@@ -15,7 +17,7 @@ class TestHealthEndpoints:
         data = response.json()
         assert data["status"] in ["healthy", "unhealthy"]
         assert "timestamp" in data
-        assert data["version"] == "1.0.0"
+        assert data["version"] == __version__
         assert "database" in data
 
     def test_metrics(self, test_client: TestClient) -> None:

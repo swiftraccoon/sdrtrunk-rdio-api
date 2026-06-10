@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from ..database.operations import DatabaseOperations
-from ..middleware.rate_limiter import get_limiter
+from ..middleware.rate_limiter import get_active_limits, get_limiter
 
 logger = logging.getLogger(__name__)
 
@@ -105,8 +105,8 @@ class TalkgroupSummary(BaseModel):
         }
     },
 )
-@limiter.limit("30 per minute")
-async def query_calls(
+@limiter.limit(get_active_limits)
+def query_calls(
     request: Request,
     system_id: str | None = Query(None, description="Filter by system ID"),
     talkgroup_id: int | None = Query(None, description="Filter by talkgroup ID"),
@@ -207,8 +207,8 @@ async def query_calls(
     summary="Get Call by ID",
     description="Retrieve a specific radio call by its ID",
 )
-@limiter.limit("60 per minute")
-async def get_call(request: Request, call_id: int) -> CallRecord:
+@limiter.limit(get_active_limits)
+def get_call(request: Request, call_id: int) -> CallRecord:
     """Get a specific radio call by ID."""
     db_ops: DatabaseOperations = request.app.state.db_ops
 
@@ -244,8 +244,8 @@ async def get_call(request: Request, call_id: int) -> CallRecord:
     summary="List Systems",
     description="Get a list of all systems with summary statistics",
 )
-@limiter.limit("30 per minute")
-async def list_systems(request: Request) -> list[SystemSummary]:
+@limiter.limit(get_active_limits)
+def list_systems(request: Request) -> list[SystemSummary]:
     """List all systems with summary statistics."""
     db_ops: DatabaseOperations = request.app.state.db_ops
 
@@ -274,8 +274,8 @@ async def list_systems(request: Request) -> list[SystemSummary]:
     summary="List Talkgroups",
     description="Get a list of talkgroups with summary statistics",
 )
-@limiter.limit("30 per minute")
-async def list_talkgroups(
+@limiter.limit(get_active_limits)
+def list_talkgroups(
     request: Request,
     system_id: str | None = Query(None, description="Filter by system ID"),
     min_calls: int = Query(1, description="Minimum number of calls", ge=1),
@@ -315,8 +315,8 @@ async def list_talkgroups(
         404: {"description": "Call not found or audio file missing"},
     },
 )
-@limiter.limit("60 per minute")
-async def get_call_audio(request: Request, call_id: int) -> FileResponse:
+@limiter.limit(get_active_limits)
+def get_call_audio(request: Request, call_id: int) -> FileResponse:
     """Stream audio file for a specific radio call."""
     db_ops: DatabaseOperations = request.app.state.db_ops
     config = request.app.state.config

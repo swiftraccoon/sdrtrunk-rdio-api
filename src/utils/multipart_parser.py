@@ -47,7 +47,6 @@ def parse_multipart_form(
 
     logger.debug(f"Parsing multipart form with boundary: {boundary}")
     logger.debug(f"Content length: {len(content)} bytes")
-    logger.debug(f"Content preview (first 500 bytes): {content[:500]!r}")
 
     # Convert boundary to bytes and ensure it's properly formatted
     if isinstance(boundary, str):
@@ -63,8 +62,6 @@ def parse_multipart_form(
     # Split by boundary
     parts = content.split(boundary_bytes)
     logger.debug(f"Found {len(parts)} parts")
-    for i, part in enumerate(parts[:5]):  # Log first 5 parts
-        logger.debug(f"Part {i} preview (first 200 bytes): {part[:200]!r}")
 
     for idx, part in enumerate(parts):
         if idx == 0:
@@ -135,13 +132,9 @@ def parse_multipart_form(
                     f"Found file field: {name} = {filename} ({len(body)} bytes)"
                 )
             else:
-                # It's a regular field
+                # It's a regular field (never log the value: "key" is secret)
                 fields[name] = body.decode("utf-8", errors="ignore")
-                logger.debug(
-                    f"Found field '{name}' = '{fields[name][:50]}...'"
-                    if len(fields[name]) > 50
-                    else f"Found field '{name}' = '{fields[name]}'"
-                )
+                logger.debug(f"Found field '{name}' ({len(fields[name])} chars)")
 
     return fields, files
 

@@ -80,8 +80,6 @@ def test_config_dict(temp_dir: Path) -> dict:
         "database": {
             "path": str(temp_dir / "test.db"),
             "enable_wal": True,
-            "pool_size": 5,
-            "max_overflow": 10,
         },
         "security": {
             "api_keys": [],  # No API keys for testing
@@ -102,19 +100,14 @@ def test_config_dict(temp_dir: Path) -> dict:
                 "directory": str(temp_dir / "storage"),
                 "organize_by_date": True,
                 "retention_days": 30,
+                # Background maintenance off by default in tests: the
+                # immediate first cleanup cycle would race with tests
+                # that upload calls dated older than the retention window.
+                "cleanup_interval_hours": 0,
             },
         },
         "processing": {
             "mode": "log_only",  # Use log_only for most tests
-            "store_fields": [
-                "timestamp",
-                "system",
-                "frequency",
-                "talkgroup",
-                "source",
-                "systemLabel",
-                "talkgroupLabel",
-            ],
         },
         "monitoring": {
             "health_check": {
@@ -124,12 +117,6 @@ def test_config_dict(temp_dir: Path) -> dict:
             "metrics": {
                 "enabled": True,
                 "path": "/metrics",
-            },
-            "statistics": {
-                "enabled": True,
-                "track_sources": True,
-                "track_systems": True,
-                "track_talkgroups": True,
             },
         },
         "logging": {
