@@ -28,6 +28,9 @@ updates:
     cooldown:
       default-days: 7
     open-pull-requests-limit: 1
+    # Keep the consolidated PR current after other changes land. The exact uv
+    # version in pyproject.toml must also be supported by GitHub's hosted updater.
+    rebase-strategy: "auto"
     versioning-strategy: "increase-if-necessary"
     groups:
       uv-versions:
