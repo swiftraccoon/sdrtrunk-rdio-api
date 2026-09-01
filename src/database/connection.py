@@ -908,7 +908,10 @@ class DatabaseManager:
                     raise RuntimeError("SQLite backup integrity check failed")
 
             temporary_path.chmod(0o600)
-            with temporary_path.open("rb") as backup_file:
+            # Windows' CRT-backed fsync rejects read-only descriptors. The
+            # snapshot is private and owned by this process, so reopening it
+            # read/write preserves the same validation while remaining portable.
+            with temporary_path.open("rb+") as backup_file:
                 durable_fsync(backup_file.fileno())
             os.replace(temporary_path, backup_path_obj)
             temporary_path = None

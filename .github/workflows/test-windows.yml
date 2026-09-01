@@ -35,6 +35,15 @@ jobs:
       with:
         persist-credentials: false
 
+    - name: Use unambiguous temporary directory
+      shell: pwsh
+      run: |
+        # The hosted runner's default uses a DOS 8.3 RUNNER~1 alias, which
+        # security-sensitive paths intentionally reject.
+        "TMPDIR=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
+        "TEMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
+        "TMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
+
     - name: Install uv
       uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
       with:
@@ -77,4 +86,6 @@ jobs:
         }
 
     - name: Test database operations
-      run: uv run --locked sdrtrunk-rdio-api -c test-config.yaml test-db
+      run: |
+        uv run --locked python -c 'from src.config import Config; from src.database.connection import DatabaseManager; config = Config.load_from_file("test-config.yaml", require_exists=True); DatabaseManager(config.database).close()'
+        uv run --locked sdrtrunk-rdio-api -c test-config.yaml test-db

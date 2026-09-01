@@ -314,15 +314,22 @@ def test_missing_required_index_fails_before_unbounded_low_space_upgrade(
     with sqlite3.connect(database_path) as connection:
         connection.execute("DROP INDEX idx_audio_file_path")
 
-    actual_statvfs = connection_module.os.statvfs
+    if hasattr(connection_module.os, "statvfs"):
+        actual_statvfs = connection_module.os.statvfs
 
-    def exhausted_statvfs(path: str | Path):
-        status = actual_statvfs(path)
-        values = list(status)
-        values[4] = 0  # f_bavail
-        return os.statvfs_result(values)
+        def exhausted_statvfs(path: str | Path):
+            status = actual_statvfs(path)
+            values = list(status)
+            values[4] = 0  # f_bavail
+            return os.statvfs_result(values)
 
-    monkeypatch.setattr(connection_module.os, "statvfs", exhausted_statvfs)
+        monkeypatch.setattr(connection_module.os, "statvfs", exhausted_statvfs)
+    else:
+        monkeypatch.setattr(
+            connection_module.shutil,
+            "disk_usage",
+            lambda _path: SimpleNamespace(free=0),
+        )
 
     with pytest.raises(RuntimeError, match="headroom for schema upgrade"):
         DatabaseManager(str(database_path))
@@ -631,6 +638,7 @@ manager.close()
     assert acquired.returncode == 0, acquired.stderr
 
 
+@pytest.mark.skipif(os.name == "nt", reason="question marks are reserved on Win32")
 def test_sqlite_structured_url_preserves_literal_query_character_in_path(
     tmp_path: Path,
 ) -> None:
@@ -682,6 +690,7 @@ def test_legacy_absolute_path_accepts_only_same_inode_root_alias(
     assert relative == Path("old.mp3")
 
 
+@pytest.mark.skipif(os.name == "nt", reason="requires a case-sensitive filesystem")
 def test_legacy_absolute_path_rejects_distinct_case_sensitive_root(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -836,7 +845,9 @@ def test_backup_rejects_sidecars_and_process_lock_destinations(
         canonical_database = manager.database_path
         lock_path = canonical_database.parent / ".rdio-database.lock"
         lock_before = lock_path.stat()
-        lock_contents = lock_path.read_bytes()
+        # msvcrt byte-range locks deny concurrent reads on Windows. The inode
+        # and second-manager assertions below still verify the live lock there.
+        lock_contents = None if os.name == "nt" else lock_path.read_bytes()
         protected_destinations = [
             Path(f"{canonical_database}-wal"),
             Path(f"{canonical_database}-shm"),
@@ -855,7 +866,8 @@ def test_backup_rejects_sidecars_and_process_lock_destinations(
             lock_before.st_dev,
             lock_before.st_ino,
         )
-        assert lock_path.read_bytes() == lock_contents
+        if lock_contents is not None:
+            assert lock_path.read_bytes() == lock_contents
         with pytest.raises(DatabaseInUseError, match="already in use"):
             DatabaseManager(str(database_path), exclusive_process_lock=True)
     finally:

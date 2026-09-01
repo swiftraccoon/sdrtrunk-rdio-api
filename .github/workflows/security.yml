@@ -110,7 +110,9 @@ jobs:
 
     - name: Export image for isolated scanning
       shell: bash
-      run: docker image save --output "${RUNNER_TEMP}/security-scan.tar" sdrtrunk-rdio-api:security-scan
+      run: |
+        docker image save --output "${RUNNER_TEMP}/security-scan.tar" sdrtrunk-rdio-api:security-scan
+        chmod 0644 "${RUNNER_TEMP}/security-scan.tar"
 
     - name: Generate SPDX JSON SBOM
       run: |
@@ -118,6 +120,7 @@ jobs:
           --cap-drop ALL \
           --security-opt no-new-privileges \
           --network none \
+          --env SYFT_CHECK_FOR_APP_UPDATE=false \
           --volume "${RUNNER_TEMP}/security-scan.tar:/image.tar:ro" \
           anchore/syft:v1.51.1@sha256:95fe0835e5bebc6f8b1f8acef68d47d63d594ef4c0f25c097ff853b23cbac74c \
           docker-archive:/image.tar --output spdx-json > sbom.spdx.json

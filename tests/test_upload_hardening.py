@@ -642,13 +642,15 @@ def test_storage_permissions_unique_names_and_filename_byte_limit(
     temporary.chmod(0o755)
 
     handler = FileHandler(str(storage), str(temporary), organize_by_date=True)
-    assert stat.S_IMODE(storage.stat().st_mode) == 0o700
-    assert stat.S_IMODE(temporary.stat().st_mode) == 0o700
+    if os.name == "posix":
+        assert stat.S_IMODE(storage.stat().st_mode) == 0o700
+        assert stat.S_IMODE(temporary.stat().st_mode) == 0o700
 
     stored_paths = []
     for _ in range(2):
         source = handler.save_temp_file("call.mp3", _valid_mp3())
-        assert stat.S_IMODE(source.stat().st_mode) == 0o600
+        if os.name == "posix":
+            assert stat.S_IMODE(source.stat().st_mode) == 0o600
         stored_paths.append(
             handler.store_file(
                 source,
@@ -661,14 +663,19 @@ def test_storage_permissions_unique_names_and_filename_byte_limit(
 
     assert stored_paths[0] != stored_paths[1]
     for stored in stored_paths:
-        assert len(stored.name.encode("utf-8")) <= os.pathconf(
-            stored.parent, "PC_NAME_MAX"
+        name_limit = (
+            os.pathconf(stored.parent, "PC_NAME_MAX")
+            if hasattr(os, "pathconf")
+            else 255
         )
-        assert stat.S_IMODE(stored.stat().st_mode) == 0o600
+        assert len(stored.name.encode("utf-8")) <= name_limit
+        if os.name == "posix":
+            assert stat.S_IMODE(stored.stat().st_mode) == 0o600
         for directory in stored.parent.relative_to(storage).parents:
-            if str(directory) != ".":
+            if os.name == "posix" and str(directory) != ".":
                 assert stat.S_IMODE((storage / directory).stat().st_mode) == 0o700
-        assert stat.S_IMODE(stored.parent.stat().st_mode) == 0o700
+        if os.name == "posix":
+            assert stat.S_IMODE(stored.parent.stat().st_mode) == 0o700
 
 
 def test_stream_copy_uses_bounded_reads_and_mode_0600(tmp_path: Path) -> None:
@@ -685,7 +692,8 @@ def test_stream_copy_uses_bounded_reads_and_mode_0600(tmp_path: Path) -> None:
     )
     saved = asyncio.run(handler.save_upload_file("call.mp3", upload))
     assert saved.read_bytes() == _valid_mp3()
-    assert stat.S_IMODE(saved.stat().st_mode) == 0o600
+    if os.name == "posix":
+        assert stat.S_IMODE(saved.stat().st_mode) == 0o600
 
 
 def test_upload_copy_fsync_does_not_block_event_loop(

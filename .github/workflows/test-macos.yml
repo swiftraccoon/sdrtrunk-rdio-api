@@ -77,4 +77,6 @@ jobs:
         fi
 
     - name: Test database operations
-      run: uv run --locked sdrtrunk-rdio-api -c test-config.yaml test-db
+      run: |
+        uv run --locked python -c 'from src.config import Config; from src.database.connection import DatabaseManager; config = Config.load_from_file("test-config.yaml", require_exists=True); DatabaseManager(config.database).close()'
+        uv run --locked sdrtrunk-rdio-api -c test-config.yaml test-db

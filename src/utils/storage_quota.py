@@ -1313,7 +1313,10 @@ class StorageCapacity:
                     continue
 
                 try:
-                    entry_status = entry.stat(follow_symlinks=False)
+                    # DirEntry.stat() leaves st_dev/st_ino as zero on Windows.
+                    # Fetch complete identity data before comparing devices or
+                    # detecting directory replacement and cycles.
+                    entry_status = os.stat(entry.path, follow_symlinks=False)
                 except OSError:
                     yield 0, 0, False
                     continue

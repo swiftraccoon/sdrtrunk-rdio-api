@@ -174,7 +174,8 @@ def _fsync_regular_file(path: Path) -> None:
     """Flush a completed, non-symlink regular file before moving it."""
     descriptor = os.open(
         path,
-        os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0),
+        # Windows' CRT-backed fsync rejects read-only descriptors.
+        os.O_RDWR | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0),
     )
     try:
         if not stat.S_ISREG(os.fstat(descriptor).st_mode):

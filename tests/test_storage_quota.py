@@ -131,6 +131,7 @@ def test_completed_spool_is_not_double_charged_when_free_space_drops(
         lambda _path: SimpleNamespace(
             f_bavail=next(available), f_frsize=1, f_bsize=1, f_favail=10**9
         ),
+        raising=False,
     )
     reservation = capacity.reserve_upload()
     assert capacity.snapshot.filesystem_reserved_bytes == 100
@@ -150,7 +151,9 @@ def test_filesystem_capacity_failure_rejects_without_leaking_reservation(
     def unavailable(_path: object) -> os.statvfs_result:
         raise OSError("simulated statvfs failure")
 
-    monkeypatch.setattr("src.utils.storage_quota.os.statvfs", unavailable)
+    monkeypatch.setattr(
+        "src.utils.storage_quota.os.statvfs", unavailable, raising=False
+    )
     with pytest.raises(CapacityUnavailable, match="could not be verified"):
         capacity.reserve_upload()
     assert capacity.snapshot.active_reservations == 0
@@ -168,7 +171,9 @@ def test_post_auth_stage_probe_failure_keeps_transient_lease_releasable(
     def unavailable(_path: object) -> os.statvfs_result:
         raise OSError("simulated archive statvfs failure")
 
-    monkeypatch.setattr("src.utils.storage_quota.os.statvfs", unavailable)
+    monkeypatch.setattr(
+        "src.utils.storage_quota.os.statvfs", unavailable, raising=False
+    )
     with pytest.raises(CapacityUnavailable, match="could not be verified"):
         reservation.claim_persistent()
     snapshot = capacity.snapshot
@@ -187,6 +192,7 @@ def test_free_space_reserve_is_enforced(tmp_path: Path, monkeypatch) -> None:
         lambda _path: SimpleNamespace(
             f_bavail=124, f_frsize=1, f_bsize=1, f_favail=10**9
         ),
+        raising=False,
     )
     with pytest.raises(CapacityUnavailable, match="free-space reserve"):
         capacity.reserve_upload()
@@ -196,6 +202,7 @@ def test_free_space_reserve_is_enforced(tmp_path: Path, monkeypatch) -> None:
         lambda _path: SimpleNamespace(
             f_bavail=125, f_frsize=1, f_bsize=1, f_favail=10**9
         ),
+        raising=False,
     )
     reservation = capacity.reserve_upload()
     reservation.release()
@@ -210,6 +217,7 @@ def test_free_inode_reserve_is_enforced_before_parsing(
         lambda _path: SimpleNamespace(
             f_bavail=10**9, f_frsize=1, f_bsize=1, f_favail=5
         ),
+        raising=False,
     )
     with pytest.raises(CapacityUnavailable, match="free-inode reserve"):
         capacity.reserve_upload()
@@ -219,6 +227,7 @@ def test_free_inode_reserve_is_enforced_before_parsing(
         lambda _path: SimpleNamespace(
             f_bavail=10**9, f_frsize=1, f_bsize=1, f_favail=6
         ),
+        raising=False,
     )
     reservation = capacity.reserve_upload()
     assert capacity.snapshot.filesystem_reserved_inodes == 1
@@ -238,6 +247,7 @@ def test_archive_inode_reserve_is_rechecked_after_validation(
             f_bsize=1,
             f_favail=next(available_inodes),
         ),
+        raising=False,
     )
     reservation = capacity.reserve_upload()
     reservation.complete_spool()
@@ -263,6 +273,7 @@ def test_statvfs_all_zero_inode_tuple_means_dynamic_metadata(
             f_ffree=0,
             f_favail=0,
         ),
+        raising=False,
     )
     reservation = capacity.reserve_upload()
     reservation.release()
@@ -277,6 +288,7 @@ def test_statvfs_all_zero_inode_tuple_means_dynamic_metadata(
             f_ffree=0,
             f_favail=0,
         ),
+        raising=False,
     )
     with pytest.raises(CapacityUnavailable, match="free-inode reserve"):
         capacity.reserve_upload()
@@ -317,7 +329,9 @@ def test_stage_bytes_are_aggregated_by_device(
         return SimpleNamespace(f_bavail=200, f_frsize=1, f_bsize=1, f_favail=10**9)
 
     monkeypatch.setattr("src.utils.storage_quota.os.stat", staged_stat)
-    monkeypatch.setattr("src.utils.storage_quota.os.statvfs", staged_statvfs)
+    monkeypatch.setattr(
+        "src.utils.storage_quota.os.statvfs", staged_statvfs, raising=False
+    )
     reservation = capacity.reserve_upload()
     assert capacity.snapshot.filesystem_reserved_bytes == 100
     assert capacity.snapshot.filesystem_reserved_inodes == 1
@@ -343,6 +357,7 @@ def test_same_device_requires_all_three_stage_reservations(
         lambda _path: SimpleNamespace(
             f_bavail=next(available), f_frsize=1, f_bsize=1, f_favail=10**9
         ),
+        raising=False,
     )
     reservation = capacity.reserve_upload()
     reservation.complete_spool()
@@ -475,7 +490,9 @@ def test_separate_state_filesystem_enforces_write_margin_and_free_floor(
         )
 
     monkeypatch.setattr("src.utils.storage_quota.os.stat", staged_stat)
-    monkeypatch.setattr("src.utils.storage_quota.os.statvfs", staged_statvfs)
+    monkeypatch.setattr(
+        "src.utils.storage_quota.os.statvfs", staged_statvfs, raising=False
+    )
     with pytest.raises(CapacityUnavailable, match="free-space reserve"):
         capacity.reserve_upload()
 
@@ -635,6 +652,7 @@ def test_state_margin_is_reserved_once_per_shared_device(
         lambda _path: SimpleNamespace(
             f_bavail=10**9, f_frsize=1, f_bsize=1, f_favail=10**9
         ),
+        raising=False,
     )
     reservation = capacity.reserve_upload()
     assert capacity.snapshot.filesystem_reserved_bytes == 100 + 1024 * 1024
@@ -1784,6 +1802,49 @@ def test_cross_device_component_is_refused_for_read_delete_and_prune(
     assert handler.remove_empty_directories([str(stored)]) == 0
     assert nested.is_dir()
     handler.close()
+
+
+def test_path_archive_scanner_uses_complete_identity_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Model Windows, where cached DirEntry identities are unavailable."""
+    capacity = _capacity(tmp_path)
+    nested = capacity.storage_directory / "nested"
+    nested.mkdir()
+    (nested / "call.mp3").write_bytes(b"audio")
+    actual_scandir = os.scandir
+
+    class WindowsLikeEntry:
+        def __init__(self, entry: os.DirEntry[str]) -> None:
+            self.name = entry.name
+            self.path = entry.path
+
+        @staticmethod
+        def stat(*, follow_symlinks: bool) -> object:
+            raise AssertionError("path scanner must fetch complete metadata")
+
+    class WindowsLikeScan:
+        def __init__(self, path: object) -> None:
+            self._entries = actual_scandir(path)
+
+        def __iter__(self) -> WindowsLikeScan:
+            return self
+
+        def __next__(self) -> WindowsLikeEntry:
+            return WindowsLikeEntry(next(self._entries))
+
+        def close(self) -> None:
+            self._entries.close()
+
+    monkeypatch.setattr(
+        "src.utils.storage_quota.os.scandir", lambda path: WindowsLikeScan(path)
+    )
+    events = list(capacity._archive_scan_events_by_path())
+
+    assert sum(size for size, _files, _certain in events) == len(b"audio")
+    assert sum(files for _size, files, _certain in events) == 1
+    assert all(certain for _size, _files, certain in events)
+    capacity.close()
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX descriptor scan")
