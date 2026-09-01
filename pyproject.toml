@@ -21,7 +21,7 @@ sdrtrunk-rdio-api = "cli:main_sync"
 
 [build-system]
 requires = [
-    "editables==0.5",
+    "editables==0.6",
     "hatchling==1.32.0",
     "packaging==26.3",
     "pathspec==1.1.1",
@@ -48,7 +48,7 @@ include = [
 
 [dependency-groups]
 build = [
-    "editables==0.5",
+    "editables==0.6",
     "hatchling==1.32.0",
 ]
 dev = [
@@ -78,7 +78,7 @@ required-version = "==0.12.7"
 # Mirror the PEP 517 backend pins as uv-wide build constraints so isolated
 # builds cannot select a different copy of these executable build tools.
 build-constraint-dependencies = [
-    "editables==0.5",
+    "editables==0.6",
     "packaging==26.3",
     "pathspec==1.1.1",
     "pluggy==1.6.0",
