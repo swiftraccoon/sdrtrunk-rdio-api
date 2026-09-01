@@ -239,7 +239,9 @@ jobs:
       shell: bash
       env:
         IMAGE_VERSION: ${{ steps.version.outputs.version }}
-      run: docker image save --output "${RUNNER_TEMP}/rdiocallsapi.tar" "rdiocallsapi:${IMAGE_VERSION}"
+      run: |
+        docker image save --output "${RUNNER_TEMP}/rdiocallsapi.tar" "rdiocallsapi:${IMAGE_VERSION}"
+        chmod 0644 "${RUNNER_TEMP}/rdiocallsapi.tar"
 
     - name: Scan release image for high and critical vulnerabilities
       run: |

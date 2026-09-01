@@ -405,6 +405,7 @@ class TestQueryEndpoints:
         assert response.headers["content-type"] == "audio/mpeg"
         assert len(response.content) == 1028  # 4 header + 1024 data
 
+    @pytest.mark.skipif(os.name != "posix", reason="POSIX open-inode semantics")
     def test_get_call_audio_streams_the_pinned_inode_after_path_replacement(
         self,
         test_client: TestClient,

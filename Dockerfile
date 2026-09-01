@@ -1,5 +1,5 @@
 # Multi-stage Dockerfile for RdioCallsAPI
-ARG PYTHON_IMAGE=python:3.11.16-slim-trixie@sha256:1042b61448fef4ba92d16a8c7eb4996d027568ce64792a7877fd88511e0af7c6
+ARG PYTHON_IMAGE=python:3.11.16-alpine3.24@sha256:6857d2dae63e052057f2db389a7061188ac9a92a3fa8d402bde68f36df6fada1
 
 # Keep the dependency installer out of the runtime image. Both this digest and
 # PYTHON_IMAGE are multi-platform image-index digests.
@@ -41,11 +41,25 @@ RUN --network=none \
 # Stage 2: Runtime
 FROM ${PYTHON_IMAGE} AS runtime
 
-# Keep application code root-owned and grant the service account access only to
-# the state directories it needs to modify.
-RUN useradd --create-home --uid 1000 --shell /usr/sbin/nologin rdio && \
-    install -d -o root -g root -m 0755 /app && \
-    install -d -o rdio -g rdio -m 0700 /app/data /app/logs
+# Apply published base-image fixes, then remove packaging tools that are not
+# needed after the wheel is installed in the builder. Keep application code
+# root-owned and grant the service account access only to mutable state.
+RUN apk upgrade --no-cache && \
+    rm -rf \
+        /usr/local/lib/python3.11/ensurepip \
+        /usr/local/lib/python3.11/site-packages/_distutils_hack \
+        /usr/local/lib/python3.11/site-packages/pip* \
+        /usr/local/lib/python3.11/site-packages/pkg_resources \
+        /usr/local/lib/python3.11/site-packages/setuptools* \
+        /usr/local/lib/python3.11/site-packages/wheel* \
+        /usr/local/bin/pip* \
+        /usr/local/bin/wheel && \
+    addgroup -S -g 1000 rdio && \
+    adduser -S -D -H -u 1000 -G rdio -s /sbin/nologin rdio && \
+    mkdir -p /app/data /app/logs && \
+    chown rdio:rdio /app/data /app/logs && \
+    chmod 0755 /app && \
+    chmod 0700 /app/data /app/logs
 
 # Set working directory
 WORKDIR /app
@@ -68,7 +82,8 @@ ENV PATH="/app/.venv/bin:$PATH" \
 USER rdio
 
 # Create data directories
-RUN install -d -m 0700 data/audio data/temp logs
+RUN mkdir -p data/audio data/temp logs && \
+    chmod 0700 data/audio data/temp logs
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \

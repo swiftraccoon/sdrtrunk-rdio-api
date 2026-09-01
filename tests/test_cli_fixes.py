@@ -272,6 +272,7 @@ class TestCleanCommand:
                 f_bsize=1,
                 f_bavail=available[0],
             ),
+            raising=False,
         )
 
         assert not cli._vacuum_has_headroom(db_ops.db_manager, test_config)

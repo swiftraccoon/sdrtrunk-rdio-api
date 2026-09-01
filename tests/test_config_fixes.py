@@ -6,6 +6,7 @@ import stat
 from pathlib import Path
 
 import pytest
+import yaml
 
 from src.config import (
     MAX_CONFIG_FILE_BYTES,
@@ -480,7 +481,7 @@ def test_security_sensitive_config_paths_apply_win32_namespace_policy(
 def test_config_file_cannot_be_a_database_sidecar_alias(temp_dir: Path) -> None:
     database = temp_dir / "calls.db"
     config_file = Path(f"{database}-wal")
-    original = f'database:\n  path: "{database}"\n'
+    original = yaml.safe_dump({"database": {"path": str(database)}})
     config_file.write_text(original)
     config_file.chmod(0o600)
 
@@ -495,12 +496,17 @@ def test_config_file_cannot_be_a_casefolded_rotated_log_alias(
 ) -> None:
     log_file = temp_dir / "service.log"
     config_file = temp_dir / "SERVICE.LOG.1"
-    original = (
-        "logging:\n"
-        "  file:\n"
-        "    enabled: true\n"
-        f'    path: "{log_file}"\n'
-        "    backup_count: 1\n"
+    original = yaml.safe_dump(
+        {
+            "logging": {
+                "file": {
+                    "enabled": True,
+                    "path": str(log_file),
+                    "backup_count": 1,
+                }
+            }
+        },
+        sort_keys=False,
     )
     config_file.write_text(original)
     config_file.chmod(0o600)

@@ -1608,6 +1608,7 @@ def test_unlink_and_accounting_are_one_mutation_window(
     assert capacity.snapshot.stored_bytes == 0
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX directory fsync semantics")
 def test_post_unlink_fsync_failure_releases_capacity_inside_mutation_window(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -322,13 +322,29 @@ def open_secure_regular_file(path: str | Path) -> int:
     absolute = _absolute_path(path)
 
     if os.name != "posix":  # pragma: no cover - exercised by Windows CI
-        return os.open(
+        # Windows refuses to open directories through ``os.open``, so inspect
+        # the path first to provide the same fail-closed regular-file contract
+        # and diagnostic as the descriptor walk below. Revalidate the opened
+        # descriptor so a path replacement cannot bypass the type check.
+        if not stat.S_ISREG(os.stat(absolute, follow_symlinks=False).st_mode):
+            raise OSError("Protected path is not a regular file")
+        descriptor = os.open(
             absolute,
             os.O_RDONLY
             | getattr(os, "O_CLOEXEC", 0)
             | getattr(os, "O_NOFOLLOW", 0)
             | getattr(os, "O_NONBLOCK", 0),
         )
+        try:
+            if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+                raise OSError("Protected path is not a regular file")
+            reject_insecure_extended_acl(
+                descriptor, description="Protected regular file"
+            )
+        except BaseException:
+            os.close(descriptor)
+            raise
+        return descriptor
     if not absolute.name:
         raise OSError("Protected path must name a regular file")
 
