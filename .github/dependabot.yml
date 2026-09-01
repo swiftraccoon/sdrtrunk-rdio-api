@@ -9,6 +9,7 @@ multi-ecosystem-groups:
       interval: "monthly"
       time: "09:00"
       timezone: "America/New_York"
+    open-pull-requests-limit: 1
     assignees:
       - "swiftraccoon"
     commit-message:
@@ -50,7 +51,6 @@ updates:
     multi-ecosystem-group: "monthly-toolchain"
     cooldown:
       default-days: 7
-    open-pull-requests-limit: 1
     groups:
       actions-security:
         applies-to: "security-updates"
@@ -66,7 +66,6 @@ updates:
     multi-ecosystem-group: "monthly-toolchain"
     cooldown:
       default-days: 7
-    open-pull-requests-limit: 1
     groups:
       pre-commit-security:
         applies-to: "security-updates"
@@ -82,7 +81,6 @@ updates:
     multi-ecosystem-group: "monthly-toolchain"
     cooldown:
       default-days: 7
-    open-pull-requests-limit: 1
     groups:
       container-security:
         applies-to: "security-updates"

@@ -24,6 +24,7 @@ def test_dependabot_batches_routine_updates() -> None:
 
     toolchain_group = config["multi-ecosystem-groups"]["monthly-toolchain"]
     assert toolchain_group["schedule"]["interval"] == "monthly"
+    assert toolchain_group["open-pull-requests-limit"] == 1
 
     uv_update = updates["uv"]
     assert uv_update["schedule"]["interval"] == "monthly"
@@ -34,7 +35,7 @@ def test_dependabot_batches_routine_updates() -> None:
         update = updates[ecosystem]
         assert update["patterns"] == ["*"]
         assert update["multi-ecosystem-group"] == "monthly-toolchain"
-        assert update["open-pull-requests-limit"] == 1
+        assert "open-pull-requests-limit" not in update
 
 
 def test_uv_version_matches_container_build_tool() -> None:
