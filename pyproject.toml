@@ -21,13 +21,7 @@ sdrtrunk-rdio-api = "cli:main_sync"
 
 [build-system]
 requires = [
-    "editables==0.5",
-    "hatchling==1.32.0",
-    "packaging==26.3",
-    "pathspec==1.1.1",
-    "pluggy==1.6.0",
-    "tomlkit==0.15.1",
-    "trove-classifiers==2026.6.1.19",
+    "hatchling>=1.32,<2",
 ]
 build-backend = "hatchling.build"
 
@@ -48,8 +42,8 @@ include = [
 
 [dependency-groups]
 build = [
-    "editables==0.5",
-    "hatchling==1.32.0",
+    "editables>=0.5,<1",
+    "hatchling>=1.32,<2",
 ]
 dev = [
     { include-group = "build" },
@@ -69,22 +63,13 @@ dev = [
     "pip-audit>=2.9.0",
     "pip>=26.2",
     "pre-commit>=4.6.2",
-    "detect-secrets==1.5.0",
+    "detect-secrets>=1.5,<2",
 ]
 
 [tool.uv]
-# Keep local, CI, and container lock semantics on the reviewed uv release.
-required-version = "==0.12.7"
-# Mirror the PEP 517 backend pins as uv-wide build constraints so isolated
-# builds cannot select a different copy of these executable build tools.
-build-constraint-dependencies = [
-    "editables==0.5",
-    "packaging==26.3",
-    "pathspec==1.1.1",
-    "pluggy==1.6.0",
-    "tomlkit==0.15.1",
-    "trove-classifiers==2026.6.1.19",
-]
+# setup-uv reads this value in CI. Keep it synchronized with the digest-pinned
+# uv build image; a deployment regression test enforces the shared version.
+required-version = "==0.12.8"
 
 [tool.black]
 line-length = 88

@@ -130,7 +130,7 @@ ingestion is fail-closed.
 {
   "status": "healthy",
   "timestamp": "2024-01-01T12:00:00Z",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "database": "connected"
 }
 ```

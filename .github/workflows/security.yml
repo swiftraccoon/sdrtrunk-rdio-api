@@ -19,7 +19,6 @@ concurrency:
 env:
   PYTHON_VERSION: "3.13"
   UV_PYTHON: "3.13"
-  UV_VERSION: "0.12.7"
   # Security results are meaningful only for the reviewed dependency graph.
   # Prevent every project-aware uv command from re-locking implicitly.
   UV_LOCKED: "1"
@@ -38,8 +37,6 @@ jobs:
 
     - name: Install uv
       uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
-      with:
-        version: ${{ env.UV_VERSION }}
 
     - name: Set up Python
       run: uv python install "$PYTHON_VERSION"
@@ -145,70 +142,5 @@ jobs:
         path: |
           sbom.spdx.json
           trivy-report.json
-        if-no-files-found: warn
-        retention-days: 30
-
-  dependency-check:
-    name: Check Dependencies
-    runs-on: ubuntu-latest
-    if: github.event_name == 'schedule'
-    permissions:
-      contents: read
-      issues: write # Required only for the scheduled dependency-update issue.
-
-    steps:
-    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      with:
-        persist-credentials: false
-
-    - name: Install uv
-      uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
-      with:
-        version: ${{ env.UV_VERSION }}
-
-    - name: Set up Python
-      run: uv python install "$PYTHON_VERSION"
-
-    - name: Check for outdated dependencies
-      id: outdated
-      shell: bash
-      run: |
-        uv sync --locked --only-group build --no-install-project --no-build
-        uv sync --all-extras --dev --locked --no-build-isolation
-        uv pip list --outdated --format json > outdated-dependencies.json
-        if jq --exit-status 'length > 0' outdated-dependencies.json > /dev/null; then
-          echo "found=true" >> "$GITHUB_OUTPUT"
-        else
-          echo "found=false" >> "$GITHUB_OUTPUT"
-        fi
-
-    - name: Create issue if dependencies are outdated
-      if: steps.outdated.outputs.found == 'true'
-      uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
-      with:
-        script: |
-          const title = 'Dependencies need updating';
-          const issues = await github.paginate(github.rest.issues.listForRepo, {
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            state: 'open',
-            per_page: 100
-          });
-
-          if (!issues.some((issue) => issue.title === title)) {
-            await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title,
-              body: 'The scheduled check found outdated locked dependencies. Review the workflow artifact or run `uv pip list --outdated` locally.'
-            });
-          }
-
-    - name: Upload outdated dependency report
-      if: always()
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-      with:
-        name: outdated-dependencies-${{ github.sha }}
-        path: outdated-dependencies.json
         if-no-files-found: warn
         retention-days: 30

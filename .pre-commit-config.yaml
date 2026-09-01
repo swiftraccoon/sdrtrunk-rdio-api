@@ -27,6 +27,7 @@ repos:
         name: mypy (locked project environment)
         entry: uv run --locked mypy
         language: system
+        require_serial: true
         files: ^src/
         types: [python]
 

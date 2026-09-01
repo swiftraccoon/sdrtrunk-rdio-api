@@ -628,7 +628,7 @@ A high-performance API server for receiving, storing, and managing radio scanner
                             "example": {
                                 "status": "healthy",
                                 "timestamp": "2024-12-06T12:34:56Z",
-                                "version": "1.0.0",
+                                "version": __version__,
                                 "database": "connected",
                             }
                         }
