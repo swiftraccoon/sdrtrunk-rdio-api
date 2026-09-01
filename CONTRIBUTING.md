@@ -28,11 +28,14 @@ By participating in this project, you agree to abide by our Code of Conduct:
 
 1. **Fork the repository** on GitHub
 2. **Clone your fork** locally:
+
    ```bash
    git clone https://github.com/YOUR_USERNAME/sdrtrunk-rdio-api.git
    cd sdrtrunk-rdio-api
    ```
+
 3. **Add the upstream repository**:
+
    ```bash
    git remote add upstream https://github.com/swiftraccoon/sdrtrunk-rdio-api.git
    ```
@@ -48,22 +51,26 @@ By participating in this project, you agree to abide by our Code of Conduct:
 ### Installation
 
 1. **Install uv** (if not already installed):
+
    ```bash
    curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
 
 2. **Install dependencies**:
+
    ```bash
    uv sync
    ```
 
 3. **Copy and configure the config file**:
+
    ```bash
    cp config/config.example.yaml config/config.yaml
    # Edit config/config.yaml as needed for your setup
    ```
 
 4. **Run tests to verify setup**:
+
    ```bash
    make test
    ```
@@ -71,6 +78,7 @@ By participating in this project, you agree to abide by our Code of Conduct:
 ### Development Workflow
 
 1. **Create a new branch** for your feature/fix:
+
    ```bash
    git checkout -b feature/your-feature-name
    ```
@@ -78,11 +86,13 @@ By participating in this project, you agree to abide by our Code of Conduct:
 2. **Make your changes** following our coding standards
 
 3. **Run quality checks**:
+
    ```bash
    make check  # Runs all checks (format, lint, type, test)
    ```
 
 4. **Commit your changes** with clear, descriptive messages:
+
    ```bash
    git add .
    git commit -m "feat: add new feature X"
@@ -133,21 +143,21 @@ def process_audio_file(
     validate: bool = True
 ) -> ProcessResult:
     """Process an audio file for storage.
-    
+
     Args:
         file_path: Path to the audio file
         config: Application configuration
         validate: Whether to validate the file
-        
+
     Returns:
         ProcessResult with status and metadata
-        
+
     Raises:
         InvalidAudioFormatError: If audio format is invalid
         FileSizeError: If file exceeds size limits
     """
     logger.info(f"Processing audio file: {file_path}")
-    
+
     try:
         # Implementation here
         pass
@@ -203,12 +213,14 @@ uv run pytest tests/test_your_feature.py -xvs
 ### Before Submitting
 
 1. **Update from upstream**:
+
    ```bash
    git fetch upstream
    git rebase upstream/main
    ```
 
 2. **Run all checks**:
+
    ```bash
    make check
    ```
@@ -250,6 +262,7 @@ uv run pytest tests/test_your_feature.py -xvs
 ### Bug Reports
 
 Include:
+
 - **Description**: Clear description of the bug
 - **Steps to reproduce**: Detailed steps
 - **Expected behavior**: What should happen
@@ -260,6 +273,7 @@ Include:
 ### Feature Requests
 
 Include:
+
 - **Use case**: Why is this needed?
 - **Proposed solution**: How should it work?
 - **Alternatives**: Other approaches considered
@@ -326,6 +340,7 @@ make check
 ### Debugging
 
 1. **Enable debug logging**:
+
    ```yaml
    # config/config.yaml
    logging:
@@ -333,11 +348,13 @@ make check
    ```
 
 2. **Use debugger**:
+
    ```python
    import pdb; pdb.set_trace()
    ```
 
 3. **Check logs**:
+
    ```bash
    tail -f logs/rdio_calls_api.log
    ```
@@ -345,6 +362,7 @@ make check
 ## Recognition
 
 Contributors will be recognized in:
+
 - The project README
 - Release notes
 - GitHub contributors page
@@ -354,6 +372,7 @@ Thank you for contributing to sdrtrunk-rdio-api! Your efforts help make this pro
 ## Questions?
 
 If you have questions not covered here:
+
 1. Check existing issues and discussions
 2. Open a new discussion
 3. Contact the maintainers

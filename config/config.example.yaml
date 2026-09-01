@@ -1,16 +1,22 @@
 # sdrtrunk-rdio-api Configuration
-# Every option shown here is read by the server; defaults are sensible,
-# so you usually only need to set an API key.
+# Every option shown here is read by the server. Server startup fails until
+# at least one API key is configured (unless an unsafe mode is explicitly set).
 
 # API Server Configuration
 server:
-  # "0.0.0.0" listens on all interfaces; "127.0.0.1" is localhost-only
-  host: "0.0.0.0"
+  # Localhost-only by default. Use a firewall/reverse proxy before widening this.
+  host: "127.0.0.1"
   port: 8080
-  cors_origins: ["*"]
+  cors_origins: []
   # Interactive API docs at /docs (disable in production if unwanted)
   enable_docs: true
   debug: false
+  # Optional built-in TLS. Configure both or neither.
+  # ssl_cert: "/path/to/fullchain.pem"
+  # ssl_key: "/path/to/private-key.pem"
+  # Absolute per-stream request-body deadline; prevents stalled or trickled
+  # HTTP/2 bodies from being kept alive by multiplexed connection traffic.
+  read_timeout_seconds: 30
 
 # Database Configuration
 database:
@@ -21,12 +27,14 @@ database:
 
 # API Security Configuration
 security:
-  # API keys for authentication.
-  # WARNING: an empty list means uploads are accepted from ANYONE.
+  # API keys protect uploads, queries, metrics, and stored audio.
+  # Keys must be 16-512 characters and each needs a unique, non-secret
+  # identifier; generate a long random key value.
   api_keys: []
   # Example:
   # api_keys:
-  #   - key: "your-secret-key-here"
+  #   - key: "replace-with-a-long-random-secret"
+  #     identifier: "main-scanner"  # Stable, non-secret audit label
   #     description: "Main SDRTrunk node"
   #     allowed_ips: []      # Empty means all IPs allowed
   #     allowed_systems: []  # Empty means all systems allowed
@@ -35,7 +43,13 @@ security:
   # Leave empty unless the server runs behind a proxy you control.
   trusted_proxies: []
 
-  # Rate limiting (per client IP, or per x-api-key header if present).
+  # Unsafe compatibility modes. Leave false unless another trusted layer
+  # provides equivalent access control.
+  allow_unauthenticated_uploads: false
+  allow_unauthenticated_reads: false
+
+  # Rate limiting uses the transport IP, or a safely resolved client IP when
+  # the direct peer is listed in trusted_proxies.
   # Defaults are sized so busy trunked systems never lose calls.
   rate_limit:
     enabled: true
@@ -51,6 +65,13 @@ file_handling:
   # File size limits
   max_file_size_mb: 100
   min_file_size_kb: 1
+  # Keep this much usable space on every filesystem used by uploads,
+  # SQLite, or file logging. Capacity rejection returns HTTP 507.
+  minimum_free_space_mb: 256
+  # Also preserve filesystem metadata capacity for temp, archive, DB, and logs.
+  minimum_free_inodes: 1024
+  # Extra headroom protected for bounded SQLite retention/WAL transactions
+  maintenance_state_reserve_mb: 32
 
   # Temporary file storage
   temp_directory: "data/temp"
@@ -61,6 +82,11 @@ file_handling:
     strategy: "filesystem"
     # For filesystem storage
     directory: "data/audio"
+    # Hard cap for all regular files under directory. Each authenticated
+    # upload conservatively claims max_file_size_mb until its real size is known.
+    max_storage_size_mb: 102400
+    # Independent file-count cap protects against tiny-file archive exhaustion.
+    max_storage_files: 5000000
     # Organize into YYYY/MM/DD/system subdirectories (UTC dates)
     organize_by_date: true
     # Delete calls (audio + metadata) older than this many days.
@@ -84,7 +110,7 @@ logging:
   file:
     enabled: true
     path: "logs/rdio_calls_api.log"
-    max_size_mb: 100
+    max_size_mb: 20
     backup_count: 5
 
   # Console logging

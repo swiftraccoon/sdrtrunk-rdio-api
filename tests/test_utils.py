@@ -89,7 +89,9 @@ class TestFileHandler:
 
         # File too small
         valid, msg = handler.validate_file(
-            "test.mp3", b"ID3", "audio/mpeg"  # Only 3 bytes
+            "test.mp3",
+            b"ID3",
+            "audio/mpeg",  # Only 3 bytes
         )
         assert valid is False
         assert msg is not None and "too small" in msg
@@ -171,7 +173,7 @@ class TestFileHandler:
         )
 
         # Create some temp files
-        old_file = handler.temp_dir / "old.mp3"
+        old_file = handler.temp_dir / "upload_old.mp3"
         old_file.write_bytes(b"old")
         # Make it old by modifying mtime
         import time
@@ -181,8 +183,12 @@ class TestFileHandler:
 
         os.utime(old_file, (old_time, old_time))
 
-        new_file = handler.temp_dir / "new.mp3"
+        new_file = handler.temp_dir / "upload_new.mp3"
         new_file.write_bytes(b"new")
+
+        unrelated_file = handler.temp_dir / "unrelated.txt"
+        unrelated_file.write_bytes(b"must remain")
+        os.utime(unrelated_file, (old_time, old_time))
 
         # Cleanup
         cleaned = handler.cleanup_temp_files(max_age_hours=24)
@@ -190,6 +196,7 @@ class TestFileHandler:
         assert cleaned == 1
         assert not old_file.exists()
         assert new_file.exists()
+        assert unrelated_file.exists()
 
     def test_get_storage_stats(self, temp_dir: Path) -> None:
         """Test getting storage statistics."""
@@ -221,17 +228,17 @@ class TestMultipartParser:
 
     def test_parse_simple_form(self) -> None:
         """Test parsing simple multipart form."""
-        boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW"
+        boundary = "boundary42"
         content = (
-            b"------WebKitFormBoundary7MA4YWxkTrZu0gW\r\n"
+            b"--boundary42\r\n"
             b'Content-Disposition: form-data; name="field1"\r\n'
             b"\r\n"
             b"value1\r\n"
-            b"------WebKitFormBoundary7MA4YWxkTrZu0gW\r\n"
+            b"--boundary42\r\n"
             b'Content-Disposition: form-data; name="field2"\r\n'
             b"\r\n"
             b"value2\r\n"
-            b"------WebKitFormBoundary7MA4YWxkTrZu0gW--\r\n"
+            b"--boundary42--\r\n"
         )
 
         fields, files = parse_multipart_form(content, boundary)
@@ -241,18 +248,18 @@ class TestMultipartParser:
 
     def test_parse_with_file(self) -> None:
         """Test parsing multipart form with file."""
-        boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW"
+        boundary = "boundary42"
         content = (
-            b"------WebKitFormBoundary7MA4YWxkTrZu0gW\r\n"
+            b"--boundary42\r\n"
             b'Content-Disposition: form-data; name="field"\r\n'
             b"\r\n"
             b"value\r\n"
-            b"------WebKitFormBoundary7MA4YWxkTrZu0gW\r\n"
+            b"--boundary42\r\n"
             b'Content-Disposition: form-data; name="file"; filename="test.txt"\r\n'
             b"Content-Type: text/plain\r\n"
             b"\r\n"
             b"file content\r\n"
-            b"------WebKitFormBoundary7MA4YWxkTrZu0gW--\r\n"
+            b"--boundary42--\r\n"
         )
 
         fields, files = parse_multipart_form(content, boundary)
@@ -312,16 +319,20 @@ class TestConfig:
             },
             "security": {
                 "api_keys": [],
+                "allow_unauthenticated_uploads": True,
+                "allow_unauthenticated_reads": True,
                 "rate_limit": {
                     "enabled": False,
                 },
             },
             "file_handling": {
-                "storage_directory": "/tmp/storage",
                 "temp_directory": "/tmp/temp",
-                "organize_by_date": True,
                 "accepted_formats": [".mp3"],
                 "max_file_size_mb": 50,
+                "storage": {
+                    "directory": "/tmp/storage",
+                    "organize_by_date": True,
+                },
             },
             "processing": {
                 "mode": "store",
@@ -341,7 +352,7 @@ class TestConfig:
 
         # Create initial config
         config = Config()
-        assert config.server.host == "0.0.0.0"
+        assert config.server.host == "127.0.0.1"
         assert config.database.path == "data/rdio_calls.db"
 
     def test_config_defaults(self):
@@ -349,9 +360,9 @@ class TestConfig:
         from src.config import DatabaseConfig, SecurityConfig, ServerConfig
 
         server = ServerConfig()
-        assert server.host == "0.0.0.0"
+        assert server.host == "127.0.0.1"
         assert server.port == 8080
-        assert server.cors_origins == ["*"]
+        assert server.cors_origins == []
 
         db = DatabaseConfig()
         assert db.path == "data/rdio_calls.db"
@@ -359,6 +370,8 @@ class TestConfig:
 
         security = SecurityConfig()
         assert security.api_keys == []
+        assert security.allow_unauthenticated_uploads is False
+        assert security.allow_unauthenticated_reads is False
         assert security.rate_limit.enabled is True
 
 

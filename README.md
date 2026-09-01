@@ -99,25 +99,36 @@ uv sync
 uv run sdrtrunk-rdio-api init
 ```
 
-(Equivalent: `cp config/config.example.yaml config/config.yaml`)
+(Equivalent on POSIX systems:
+`install -m 600 config/config.example.yaml config/config.yaml`.)
 
-### Step 4: Set Your API Key
+### Step 4: Generate and Set Your API Key
+
+Generate a random key (the command prints it once):
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
 
 Open `config/config.yaml` in any text editor (Notepad, TextEdit, etc.),
-find the `security:` section, and un-comment the key lines:
+find the `security:` section, un-comment the key lines, and paste the generated
+value:
 
 ```yaml
 security:
   api_keys:
-    - key: "change-me-to-something-secret"  # ⚠️ CHANGE THIS!
+    - key: "PASTE-THE-GENERATED-RANDOM-KEY-HERE"
+      identifier: "main-scanner"
       description: "My SDRTrunk"
       allowed_ips: []
       allowed_systems: []
 ```
 
-Pick any password you want - just remember it for SDRTrunk!
-
-> ⚠️ With no API keys configured, the server accepts uploads from anyone.
+Keys must be 16-512 characters and each entry needs a unique, non-secret
+`identifier`. A missing, blank, too-short, or misspelled configuration fails
+startup; the service does not silently become public. Existing configurations
+without identifiers must add them before upgrading.
+Store the key in a password manager and enter the same value in SDRTrunk.
 
 ### Step 5: Start the Server
 
@@ -127,10 +138,10 @@ uv run sdrtrunk-rdio-api serve
 
 You should see:
 
-```
+```text
 >> Starting sdrtrunk-rdio-api Server
   - Config: config/config.yaml
-  - Address: http://0.0.0.0:8080
+  - Address: http://127.0.0.1:8080
   ...
   - API Keys: 1 configured
 
@@ -148,6 +159,11 @@ Press Ctrl+C to stop the server
    - **System ID:** `1`
 3. Click "Test" - you should see "Test successful!"
 4. Save and start your playlist
+
+The default bind address is localhost-only. If SDRTrunk runs on another
+machine, set `server.host: "0.0.0.0"` only after restricting port 8080 with a
+host firewall to the scanner/proxy addresses (and use TLS for untrusted
+networks).
 
 ## Verifying It's Working
 
@@ -173,15 +189,33 @@ uv run sdrtrunk-rdio-api clean --days 30
 uv run sdrtrunk-rdio-api --help
 ```
 
+The server, destructive `clean`, and long-snapshot `export` commands take an
+exclusive process lock per database directory. Stop the server before running
+`clean` or `export`; the CLI refuses to proceed if another protected process is active.
+This prevents offline cleanup from racing a live staged upload and prevents a
+large export transaction from pinning the live server's WAL.
+`stats`, `test-db`, and the pre-confirmation cleanup preview instead use
+SQLite's URI read-only mode plus `query_only`; they cannot create/repair schema
+or change the running service's journal mode, and close each bounded snapshot
+before writing terminal output.
+CLI commands use console-only logging. The server exclusively locks its rotating
+log family so concurrent processes cannot race a rollover.
+
 ## Configuration Options
 
 ### Storage Settings
 
 ```yaml
 file_handling:
+  max_file_size_mb: 100         # Per-upload parsing/storage bound
+  minimum_free_space_mb: 256    # Reserve on upload, DB, and log filesystems
+  minimum_free_inodes: 1024     # Preserve filesystem metadata headroom
+  maintenance_state_reserve_mb: 32 # Preserve bounded SQLite/WAL headroom
   storage:
     strategy: "filesystem"      # Where to store files
     directory: "data/audio"     # Storage folder
+    max_storage_size_mb: 102400 # Total persistent audio-archive quota
+    max_storage_files: 5000000  # Independent persistent file-count quota
     organize_by_date: true      # Organize into date folders (UTC dates)
     retention_days: 30          # Delete calls older than this (0 = keep forever)
     cleanup_interval_hours: 6   # How often the server enforces retention
@@ -191,6 +225,51 @@ Retention is enforced automatically by the running server: calls older than
 `retention_days` are removed from the database together with their audio
 files and upload logs. You can also clean manually with
 `sdrtrunk-rdio-api clean`.
+
+Upload admission is conservative. Before reading a body, the server reserves
+up to `max_file_size_mb` for multipart spooling plus a small SQLite/log write
+margin. After authentication and metadata validation, filesystem storage also
+reserves the application-temp and destination stages and claims one maximum-size
+archive byte/file slot. The server also reserves the worst-case file and
+directory inodes needed by each spool, state-write, temp, and destination stage;
+reservations shrink to actual archive size/count as stages complete. An
+additional `maintenance_state_reserve_mb` remains protected for each distinct
+database/log filesystem; bounded retention phases claim it atomically and
+checkpoint before releasing it. Requests
+that would cross `max_storage_size_mb`/`max_storage_files`, leave less than
+`minimum_free_space_mb`, or consume `minimum_free_inodes` headroom receive HTTP
+507. Filesystems that explicitly report no fixed inode pool are bounded by the
+persistent file-count quota instead.
+
+Capacity accounting is coordinated within one server process. The supported
+CLI runs one Hypercorn worker. If the app is embedded behind multiple ASGI
+worker processes, enforce a shared database/external quota as well. Filesystem
+free-space checks use `statvfs` and are necessarily best-effort against writes
+from other processes. Periodic reconciliation streams the complete archive in
+bounded background slices without following symlinks; very large archives keep
+upload admission closed until all slices complete.
+
+Archive query work is also bounded by elapsed time and SQLite virtual-machine
+steps. Aggregate and sort scratch can still consume temporary disk before that
+bound fires. Docker Compose directs SQLite scratch to its 64 MiB `/tmp` tmpfs;
+for a native deployment, set `SQLITE_TMPDIR` to a private, quota-limited
+filesystem sized for your expected queries. Before creating a missing required
+index, startup checks the actual SQLite scratch filesystem (`SQLITE_TMPDIR`
+before `TMPDIR` on Unix). A separate scratch filesystem must have roughly
+`max(main database + WAL size, 32 MiB) + 32 MiB` free; if it shares the
+database device, startup also preserves the configured persistent-state
+reserve. Temporarily increase the Compose `/tmp` size for a larger legacy
+database upgrade.
+`/health` is a readiness check: it returns HTTP 503 while persistent archive
+accounting is uncertain/reconciling, or a worst-case new upload cannot satisfy
+the byte, file-count, free-space, and free-inode limits. The process itself
+remains live and retention/recovery work continues.
+
+New database rows store audio locations as storage-root-relative POSIX
+references, so moving the complete archive and changing `storage.directory`
+keeps new references valid. Legacy absolute-path rows are intentionally not
+rewritten automatically: migrate them explicitly while the old configured root
+is known, before changing that root.
 
 ### Processing Modes
 
@@ -208,7 +287,8 @@ processing:
 ```yaml
 security:
   api_keys:
-    - key: "your-secret-key"
+    - key: "PASTE-A-LONG-RANDOM-KEY-HERE"
+      identifier: "basement-scanner"
       description: "SDRTrunk in basement"
       allowed_ips: ["192.168.1.100"]    # Optional: only allow from this IP
       allowed_systems: ["1", "2"]       # Optional: only allow these system IDs
@@ -217,6 +297,11 @@ security:
   # X-Forwarded-For header should be trusted for allowed_ips checks
   trusted_proxies: []
 
+  # Dangerous compatibility switches. Leave both false unless a trusted
+  # upstream layer provides equivalent authentication.
+  allow_unauthenticated_uploads: false
+  allow_unauthenticated_reads: false
+
   rate_limit:
     enabled: true
     max_requests_per_minute: 600       # Sized for busy trunked systems
@@ -224,11 +309,17 @@ security:
     max_requests_per_day: 100000
 ```
 
-> **Note**: API keys protect the upload endpoint. The query endpoints
-> (`/api/calls`, call audio, `/metrics`) are unauthenticated by design for
-> LAN use - anyone who can reach the port can browse recordings. Don't
-> expose the port to the internet without a reverse proxy providing
-> authentication.
+API keys protect uploads, query endpoints, metrics, and stored audio. Supply
+the key in SDRTrunk's form field for uploads and in the `X-API-Key` header for
+read requests. `allowed_systems` scopes both uploads and reads. `/health`
+remains public and exposes only service/database status.
+
+```bash
+RDIO_API_KEY="$(python -c 'import getpass; print(getpass.getpass("API key: "))')"
+printf 'X-API-Key: %s\n' "$RDIO_API_KEY" | \
+  curl --header @- http://localhost:8080/metrics
+unset RDIO_API_KEY
+```
 
 ## Troubleshooting
 
@@ -293,6 +384,9 @@ WorkingDirectory=/path/to/rdioCallsAPI
 ExecStart=/home/your-username/.local/bin/uv run sdrtrunk-rdio-api serve
 Restart=always
 RestartSec=10
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target
@@ -306,6 +400,34 @@ sudo systemctl enable rdiocalls
 sudo systemctl start rdiocalls
 ```
 
+### Docker Compose
+
+The image runs as non-root UID 1000 and refuses a configuration file that is
+readable by its group or by other users. On a Linux Docker host, prepare the
+bind-mounted file before starting Compose:
+
+```bash
+chmod 600 config/config.yaml
+sudo chown 1000:1000 config/config.yaml
+docker compose up --build
+```
+
+If user-namespace remapping is enabled, use the UID mapped to container UID
+1000. Verify what the container sees with
+`docker compose run --rm --no-deps --entrypoint stat sdrtrunk-rdio-api -c
+'%u %a' /app/config/config.yaml`; the result must be `1000 600` in a standard
+rootful deployment.
+
+Docker Desktop, rootless Docker, and user-namespace remapping can present a
+host bind mount with different ownership or modes inside the container. In
+particular, host-native Windows mounts can appear as mode `0777`, while macOS
+bind mounts retain host permissions and may not be readable by container UID
+1000 after being restricted to mode `0600`. Do not weaken the application's
+mode check or make the file `0644`. On Windows, keep the project on a WSL
+filesystem that preserves POSIX modes. Otherwise, replace the bind mount with
+a deployment-managed config/secret volume provisioned for UID 1000 with mode
+`0600`.
+
 ### Running Behind a Reverse Proxy
 
 If you're using nginx or Apache, the server works great behind a proxy. Just make sure to:
@@ -313,8 +435,18 @@ If you're using nginx or Apache, the server works great behind a proxy. Just mak
 1. Forward the correct headers (`X-Forwarded-For` for client IPs)
 2. Add your proxy's IP to `security.trusted_proxies` in config.yaml,
    otherwise `allowed_ips` restrictions will see the proxy's address
-3. Set appropriate timeouts for file uploads
-4. Configure SSL/TLS termination at the proxy level
+3. Set appropriate request-body timeouts for file uploads and response-idle
+   timeouts for audio downloads. The application enforces a 15-minute absolute
+   audio-response lifetime and applies `server.read_timeout_seconds` as an
+   absolute deadline for each HTTP/2 request body, but Hypercorn does not
+   provide a response-write idle timeout; the proxy must terminate stalled
+   downstream connections.
+4. Configure SSL/TLS at the proxy, or set both `server.ssl_cert` and
+   `server.ssl_key` to use the built-in TLS support
+
+Keep the application bound to `127.0.0.1` when the proxy is on the same host.
+Never add an address to `trusted_proxies` unless that peer overwrites/appends
+`X-Forwarded-For` correctly and clients cannot connect through it unchecked.
 
 ### Multiple SDRTrunk Instances
 
@@ -323,10 +455,12 @@ You can have multiple SDRTrunk instances connect to the same server:
 ```yaml
 security:
   api_keys:
-    - key: "scanner1-key"
+    - key: "PASTE-A-UNIQUE-LONG-RANDOM-KEY-FOR-SCANNER-1"
+      identifier: "living-room"
       description: "Living room scanner"
       allowed_systems: ["1"]
-    - key: "scanner2-key"
+    - key: "PASTE-A-UNIQUE-LONG-RANDOM-KEY-FOR-SCANNER-2"
+      identifier: "garage"
       description: "Garage scanner"
       allowed_systems: ["2", "3"]
 ```
@@ -361,10 +495,10 @@ See the full API documentation at: [docs/API.md](docs/API.md)
 Quick reference:
 
 - **Upload**: `POST /api/call-upload` (used by SDRTrunk)
-- **Query**: `GET /api/calls` (search stored calls)
-- **Audio**: `GET /api/calls/{id}/audio` (stream stored audio)
+- **Query**: `GET /api/calls` (search stored calls; `X-API-Key` required)
+- **Audio**: `GET /api/calls/{id}/audio` (stream audio; `X-API-Key` required)
 - **Health**: `GET /health` (check if server is working)
-- **Stats**: `GET /metrics` (see activity statistics)
+- **Stats**: `GET /metrics` (statistics; `X-API-Key` required)
 - **Docs**: `GET /docs` (interactive API documentation)
 
 ## Support

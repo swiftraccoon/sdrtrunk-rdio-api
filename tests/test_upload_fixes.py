@@ -13,6 +13,7 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
+from src.api import rdioscanner
 from src.api.app import create_app
 from src.config import Config
 
@@ -24,7 +25,8 @@ def keyed_config_dict(test_config_dict: dict) -> dict:
     config["security"] = {
         "api_keys": [
             {
-                "key": "correct-key",
+                "key": "correct-key-123456",
+                "identifier": "test-scanner",
                 "description": "test key",
                 "allowed_ips": [],
                 "allowed_systems": [],
@@ -35,13 +37,15 @@ def keyed_config_dict(test_config_dict: dict) -> dict:
     return config
 
 
-def _make_client(temp_dir: Any, config_dict: dict) -> TestClient:
+def _make_client(
+    temp_dir: Any, config_dict: dict, *, client_host: str = "testclient"
+) -> TestClient:
     config = Config(**config_dict)
     config_path = temp_dir / "keyed_config.yaml"
     with open(config_path, "w") as f:
         yaml.dump(config_dict, f, default_flow_style=False)
     app = create_app(config_path=str(config_path), override_config=config)
-    return TestClient(app)
+    return TestClient(app, client=(client_host, 50000))
 
 
 @pytest.fixture
@@ -63,11 +67,59 @@ class TestTestModeAuthentication:
     def test_test_mode_accepts_valid_api_key(self, keyed_client: TestClient):
         response = keyed_client.post(
             "/api/call-upload",
-            data={"key": "correct-key", "system": "1", "test": "1"},
+            data={"key": "correct-key-123456", "system": "1", "test": "1"},
         )
         assert response.status_code == 200
         # SDRTrunk expects this exact phrase for a successful test
         assert "incomplete call data" in response.text
+
+    @pytest.mark.parametrize(
+        ("key", "system", "allowed_ips", "allowed_systems"),
+        [
+            ("unknown-key-1234", "1", [], []),
+            ("correct-key-123456", "1", ["192.0.2.10"], []),
+            ("correct-key-123456", "2", [], ["1"]),
+        ],
+        ids=["unknown-key", "disallowed-ip", "disallowed-system"],
+    )
+    def test_failed_credentials_have_uniform_warning_work(
+        self,
+        temp_dir: Any,
+        keyed_config_dict: dict,
+        monkeypatch: pytest.MonkeyPatch,
+        key: str,
+        system: str,
+        allowed_ips: list[str],
+        allowed_systems: list[str],
+    ) -> None:
+        """Policy-denied keys must not trigger an extra key-validity log oracle."""
+        api_key = keyed_config_dict["security"]["api_keys"][0]
+        api_key["allowed_ips"] = allowed_ips
+        api_key["allowed_systems"] = allowed_systems
+        warnings: list[tuple[str, tuple[object, ...]]] = []
+
+        def record_warning(
+            _logger: logging.Logger, message: str, *args: object
+        ) -> None:
+            warnings.append((message, args))
+
+        monkeypatch.setattr(
+            rdioscanner.security_warning_sampler, "warning", record_warning
+        )
+        with _make_client(temp_dir, keyed_config_dict) as client:
+            response = client.post(
+                "/api/call-upload",
+                data={"key": key, "system": system, "test": "1"},
+            )
+
+        assert response.status_code == 401
+        assert response.json() == {"detail": "Invalid API key"}
+        assert warnings == [
+            (
+                "Rejected upload with invalid credentials from %s",
+                ("testclient",),
+            )
+        ]
 
 
 class TestValidationErrorStatusCodes:
@@ -150,12 +202,12 @@ class TestApiKeyLogRedaction:
             keyed_client.post(
                 "/api/call-upload",
                 data={
-                    "key": "correct-key",
+                    "key": "correct-key-123456",
                     "system": "1",
                     "dateTime": "1700000000",
                 },
             )
-        assert "correct-key" not in caplog.text
+        assert "correct-key-123456" not in caplog.text
 
 
 class TestXForwardedForTrust:
@@ -168,7 +220,11 @@ class TestXForwardedForTrust:
         with _make_client(temp_dir, keyed_config_dict) as client:
             response = client.post(
                 "/api/call-upload",
-                data={"key": "correct-key", "system": "1", "dateTime": "1700000000"},
+                data={
+                    "key": "correct-key-123456",
+                    "system": "1",
+                    "dateTime": "1700000000",
+                },
                 headers={"X-Forwarded-For": "10.9.8.7"},
             )
         # Direct client is "testclient", not 10.9.8.7; spoofed XFF must not help
@@ -178,12 +234,17 @@ class TestXForwardedForTrust:
         self, temp_dir: Any, keyed_config_dict: dict
     ):
         keyed_config_dict["security"]["api_keys"][0]["allowed_ips"] = ["10.9.8.7"]
-        # TestClient's direct address is "testclient"
-        keyed_config_dict["security"]["trusted_proxies"] = ["testclient"]
-        with _make_client(temp_dir, keyed_config_dict) as client:
+        keyed_config_dict["security"]["trusted_proxies"] = ["127.0.0.1"]
+        with _make_client(
+            temp_dir, keyed_config_dict, client_host="127.0.0.1"
+        ) as client:
             response = client.post(
                 "/api/call-upload",
-                data={"key": "correct-key", "system": "1", "dateTime": "1700000000"},
+                data={
+                    "key": "correct-key-123456",
+                    "system": "1",
+                    "dateTime": "1700000000",
+                },
                 headers={"X-Forwarded-For": "10.9.8.7"},
             )
         assert response.status_code == 200

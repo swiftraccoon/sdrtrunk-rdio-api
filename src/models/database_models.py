@@ -43,7 +43,9 @@ class RadioCall(Base):
     audio_filename = Column(String(255), nullable=True)
     audio_content_type = Column(String(100), nullable=True)
     audio_size_bytes = Column(Integer, nullable=True)
-    audio_file_path = Column(String(500), nullable=True)  # Full path to stored file
+    # New rows use a storage-root-relative POSIX reference. Legacy rows may
+    # still contain an absolute path until an operator performs migration.
+    audio_file_path = Column(String(500), nullable=True)
 
     # Additional metadata
     patches = Column(Text, nullable=True)  # Comma-separated patch list
@@ -63,8 +65,11 @@ class RadioCall(Base):
         Index("idx_system_talkgroup", "system_id", "talkgroup_id"),
         Index("idx_timestamp_system", "call_timestamp", "system_id"),
         Index("idx_talkgroup_timestamp", "talkgroup_id", "call_timestamp"),
-        # Date range queries
+        # Date range and retention queries. SQLite stores the INTEGER PRIMARY
+        # KEY rowid in each secondary-index entry, so this index also satisfies
+        # deterministic ORDER BY created_at, id without a duplicate composite.
         Index("idx_created_at_desc", "created_at", postgresql_using="btree"),
+        Index("idx_audio_file_path", "audio_file_path"),
         # Frequency analysis
         Index("idx_frequency_system", "frequency", "system_id"),
         # Source tracking
@@ -102,3 +107,36 @@ class UploadLog(Base):
     # Response details
     response_code = Column(Integer, nullable=True)
     processing_time_ms = Column(Float, nullable=True)
+
+
+class PendingFileDeletion(Base):
+    """Durable queue of audio files whose owning call rows were removed."""
+
+    __tablename__ = "pending_file_deletions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    path = Column(String(500), nullable=False, unique=True)
+    queued_at = Column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True
+    )
+    kind = Column(String(16), nullable=False, default="retention")
+    attempt_count = Column(Integer, nullable=False, default=0)
+    last_attempt_at = Column(DateTime, nullable=True)
+    next_attempt_at = Column(DateTime, nullable=True, index=True)
+    claim_token = Column(String(64), nullable=True, index=True)
+    claimed_at = Column(DateTime, nullable=True)
+    last_error = Column(String(512), nullable=True)
+
+    __table_args__ = (
+        # The scheduler polls the earliest unclaimed retry deadline every
+        # maintenance cycle. Keeping claim state first makes that MIN lookup a
+        # bounded covering-index operation even with a large failure backlog.
+        Index(
+            "idx_pending_claim_next_attempt",
+            "claim_token",
+            "next_attempt_at",
+        ),
+        # Claimed rows are leased and scheduled by their oldest claim time.
+        # SQLite's implicit rowid suffix also satisfies deterministic id ties.
+        Index("idx_pending_claimed_at", "claimed_at"),
+    )

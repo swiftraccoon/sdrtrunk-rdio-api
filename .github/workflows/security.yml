@@ -9,105 +9,203 @@ on:
     # Run security checks daily at midnight UTC
     - cron: '0 0 * * *'
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
   PYTHON_VERSION: "3.13"
+  UV_PYTHON: "3.13"
+  UV_VERSION: "0.12.7"
+  # Security results are meaningful only for the reviewed dependency graph.
+  # Prevent every project-aware uv command from re-locking implicitly.
+  UV_LOCKED: "1"
+  UV_NO_BUILD_ISOLATION: "1"
 
 jobs:
   scan:
-    name: Security Scan
+    name: Source and Dependency Scan
     runs-on: ubuntu-latest
-    # Continue even if security issues are found - don't block PRs
-    continue-on-error: true
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      with:
+        fetch-depth: 0
+        persist-credentials: false
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v7
+      uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
       with:
-        version: "latest"
+        version: ${{ env.UV_VERSION }}
 
     - name: Set up Python
-      run: uv python install ${{ env.PYTHON_VERSION }}
+      run: uv python install "$PYTHON_VERSION"
 
     - name: Install dependencies
-      run: uv sync --all-extras --dev
+      run: |
+        uv sync --locked --only-group build --no-install-project --no-build
+        uv sync --all-extras --dev --locked --no-build-isolation
 
     - name: Run Bandit security scan
-      run: |
-        uv run bandit -r src/ -f json -o bandit-report.json || true
-        uv run bandit -r src/ -ll
-      continue-on-error: true
+      run: uv run --locked bandit -r src/ cli.py scripts/ -ll -f json -o bandit-report.json
 
-    - name: Check for dependency vulnerabilities
+    - name: Audit locked runtime dependencies
+      if: always()
       run: |
-        uv pip list --format=freeze > requirements.txt
-        uv run pip-audit -r requirements.txt --format json -o audit-report.json || true
-        uv run pip-audit -r requirements.txt || true
-      continue-on-error: true
+        uv export --quiet --locked --no-dev --no-emit-project --format requirements-txt --output-file runtime-requirements.txt
+        uv run --locked pip-audit --disable-pip --require-hashes --requirement runtime-requirements.txt --format json --output audit-report.json
+
+    - name: Audit locked development dependencies
+      if: always()
+      run: |
+        uv export --quiet --locked --all-groups --no-emit-project --format requirements-txt --output-file development-requirements.txt
+        uv run --locked pip-audit --disable-pip --require-hashes --requirement development-requirements.txt --format json --output development-audit-report.json
+
+    - name: Run TruffleHog secrets detection
+      if: always()
+      uses: trufflesecurity/trufflehog@20652fbbdefffcdaa493a5bf57ab2ac6b1db715b # v3.97.1
+      with:
+        path: ./
+        version: "3.97.1@sha256:deb2af10659a488a14d262a323addcde099d99827a1cf1dc4e93c17915c39f08"
 
     - name: Upload security reports
       if: always()
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
       with:
         name: security-reports-${{ github.sha }}
         path: |
           bandit-report.json
           audit-report.json
+          development-audit-report.json
+          runtime-requirements.txt
+          development-requirements.txt
+        if-no-files-found: warn
         retention-days: 30
 
-    - name: Run TruffleHog secrets detection
-      if: github.event_name != 'schedule'
-      uses: trufflesecurity/trufflehog@main
+  container-security:
+    name: Container Scan and SBOM
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       with:
-        path: ./
-        base: ${{ github.event.pull_request.base.sha || github.event.before }}
-        head: ${{ github.event.pull_request.head.sha || github.sha }}
-      continue-on-error: true
+        persist-credentials: false
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+      with:
+        version: "v0.36.1"
+        driver-opts: image=moby/buildkit:v0.32.2@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8
+
+    - name: Build local image
+      uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+      with:
+        context: .
+        load: true
+        push: false
+        tags: sdrtrunk-rdio-api:security-scan
+
+    - name: Export image for isolated scanning
+      shell: bash
+      run: docker image save --output "${RUNNER_TEMP}/security-scan.tar" sdrtrunk-rdio-api:security-scan
+
+    - name: Generate SPDX JSON SBOM
+      run: |
+        docker run --rm \
+          --cap-drop ALL \
+          --security-opt no-new-privileges \
+          --network none \
+          --volume "${RUNNER_TEMP}/security-scan.tar:/image.tar:ro" \
+          anchore/syft:v1.51.1@sha256:95fe0835e5bebc6f8b1f8acef68d47d63d594ef4c0f25c097ff853b23cbac74c \
+          docker-archive:/image.tar --output spdx-json > sbom.spdx.json
+
+    - name: Scan image for high and critical vulnerabilities
+      if: always()
+      run: |
+        docker run --rm \
+          --cap-drop ALL \
+          --security-opt no-new-privileges \
+          --volume "${RUNNER_TEMP}/security-scan.tar:/image.tar:ro" \
+          aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
+          image --exit-code 1 --scanners vuln \
+          --pkg-types os,library --severity HIGH,CRITICAL --format json \
+          --input /image.tar > trivy-report.json
+
+    - name: Upload container security reports
+      if: always()
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      with:
+        name: container-security-reports-${{ github.sha }}
+        path: |
+          sbom.spdx.json
+          trivy-report.json
+        if-no-files-found: warn
+        retention-days: 30
 
   dependency-check:
     name: Check Dependencies
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule'
+    permissions:
+      contents: read
+      issues: write # Required only for the scheduled dependency-update issue.
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      with:
+        persist-credentials: false
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v7
+      uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
       with:
-        version: "latest"
+        version: ${{ env.UV_VERSION }}
 
     - name: Set up Python
-      run: uv python install ${{ env.PYTHON_VERSION }}
+      run: uv python install "$PYTHON_VERSION"
 
     - name: Check for outdated dependencies
+      id: outdated
+      shell: bash
       run: |
-        uv sync --all-extras --dev
-        uv pip list --outdated || true
+        uv sync --locked --only-group build --no-install-project --no-build
+        uv sync --all-extras --dev --locked --no-build-isolation
+        uv pip list --outdated --format json > outdated-dependencies.json
+        if jq --exit-status 'length > 0' outdated-dependencies.json > /dev/null; then
+          echo "found=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "found=false" >> "$GITHUB_OUTPUT"
+        fi
 
     - name: Create issue if dependencies are outdated
-      if: failure()
-      uses: actions/github-script@v7
+      if: steps.outdated.outputs.found == 'true'
+      uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
       with:
         script: |
-          const issues = await github.rest.issues.listForRepo({
+          const title = 'Dependencies need updating';
+          const issues = await github.paginate(github.rest.issues.listForRepo, {
             owner: context.repo.owner,
             repo: context.repo.repo,
-            labels: 'dependencies',
-            state: 'open'
+            state: 'open',
+            per_page: 100
           });
 
-          if (issues.data.length === 0) {
+          if (!issues.some((issue) => issue.title === title)) {
             await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: 'Dependencies need updating',
-              body: 'Automated check found outdated dependencies. Please review and update.',
-              labels: ['dependencies', 'maintenance']
+              title,
+              body: 'The scheduled check found outdated locked dependencies. Review the workflow artifact or run `uv pip list --outdated` locally.'
             });
           }
+
+    - name: Upload outdated dependency report
+      if: always()
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      with:
+        name: outdated-dependencies-${{ github.sha }}
+        path: outdated-dependencies.json
+        if-no-files-found: warn
+        retention-days: 30

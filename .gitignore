@@ -35,8 +35,14 @@ data/
 *.db
 *.db-shm
 *.db-wal
+# Local configuration files contain API keys and deployment paths. Keep only
+# the deliberately secret-free template under version control.
 config.yaml
-!config.example.yaml
+config/*
+!config/config.example.yaml
+.env
+.env.*
+!.env.example
 *.mp3
 *.wav
 *.m4a
@@ -44,6 +50,8 @@ config.yaml
 
 # uv
 .python-version
+.audit-runtime-requirements.txt
+.audit-development-requirements.txt
 
 .claude/
 .mypy_cache/

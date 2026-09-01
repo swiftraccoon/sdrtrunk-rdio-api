@@ -6,12 +6,36 @@ sdrtrunk-rdio-api implements the RdioScanner protocol for receiving radio call u
 
 ## Authentication
 
-API keys can be configured in the `config.yaml` file. Each key can have optional restrictions:
+API keys are configured in `config/config.yaml`. Each key must be 16-512
+characters and have a unique, public `identifier`; restrictions are
+optional:
 
 - **IP-based restrictions**: Limit key usage to specific IP addresses
-- **System-based restrictions**: Limit key usage to specific system IDs
+- **System-based restrictions**: Limit uploads and reads to specific system IDs
+- **Required stable identifier**: Attribute audit records without deriving or
+  recording any value from the secret
 
-If no API keys are configured, the API operates in open mode (not recommended for production).
+Uploads carry the key in RdioScanner's `key` multipart field. Every query,
+audio, and metrics request carries it in `X-API-Key`:
+
+```http
+X-API-Key: your-generated-random-key
+```
+
+The Bash/Zsh examples below prompt into a non-exported shell variable. Their
+built-in `printf` sends the credential to curl over standard input, so the key
+does not appear in curl's process arguments. Clear the variable after use; for
+repeatable uploads, prefer `scripts/test_upload.py --api-key-file` with a
+mode-`0600` credential file.
+
+```bash
+RDIO_API_KEY="$(python -c 'import getpass; print(getpass.getpass("API key: "))')"
+```
+
+The server fails closed when no keys are configured. Anonymous access is
+possible only through the explicit `allow_unauthenticated_uploads` and
+`allow_unauthenticated_reads` compatibility switches; do not enable them on a
+directly reachable service.
 
 ## Endpoints
 
@@ -47,6 +71,10 @@ Upload a radio call recording with metadata.
 | talkgroupTag | string | No | Additional talkgroup tag |
 | test | integer | No | Test mode flag (1 for test) |
 
+`dateTime` may be at most five minutes ahead of server time. Text fields,
+multipart part counts, and request bytes are bounded. Audio must have an
+accepted extension/MIME type and a valid MP3 signature.
+
 #### Response Formats
 
 The API automatically detects the desired response format based on the `Accept` header:
@@ -67,15 +95,18 @@ back with `GET /api/calls/123` or stream its audio with
 
 - **Plain Text Response** (default):
 
-```
+```text
 Call imported successfully.
 ```
 
 #### Error Responses
 
 - **401 Unauthorized**: Invalid or missing API key
+- **403 Forbidden**: Valid key is not allowed from this IP or for this system
 - **400 Bad Request**: Missing required fields or invalid data
+- **415 Unsupported Media Type**: Request is not an accepted form encoding
 - **413 Payload Too Large**: Audio file exceeds `max_file_size_mb`
+- **507 Insufficient Storage**: Archive byte/file quota or filesystem byte/inode reserve reached
 - **429 Too Many Requests**: Rate limit exceeded
 - **500 Internal Server Error**: Server-side error
 
@@ -84,6 +115,14 @@ Call imported successfully.
 **GET** `/health`
 
 Check if the API service is running and healthy.
+
+This is a readiness response, not a pure process-liveness probe. It returns
+HTTP 503 while the database is unavailable, persistent archive accounting is
+uncertain/actively reconciling, or a worst-case upload cannot satisfy the
+configured archive byte/file-count and filesystem byte/inode reserves. The
+state-filesystem check also preserves the configured bounded SQLite/WAL
+maintenance reserve. Retention and recovery remain available while archive
+ingestion is fail-closed.
 
 #### Response
 
@@ -96,11 +135,31 @@ Check if the API service is running and healthy.
 }
 ```
 
+### Query Calls
+
+**GET** `/api/calls`
+
+Requires `X-API-Key`. Supports `system_id`, `talkgroup_id`, `source_id`,
+`frequency`, `date_from`, `date_to`, `hours_ago`, pagination, and the documented
+sort fields. Results and totals include only systems allowed for the key.
+
+```bash
+printf 'X-API-Key: %s\n' "$RDIO_API_KEY" | \
+  curl --header @- \
+    "http://localhost:8080/api/calls?system_id=1&per_page=20"
+```
+
+**GET** `/api/calls/{call_id}` returns one in-scope call. **GET** `/api/systems`
+and **GET** `/api/talkgroups` return scoped summaries. All require the same
+header; inaccessible call IDs return 404 rather than revealing their existence.
+
 ### Metrics
 
 **GET** `/metrics`
 
 Get statistics about the API usage and stored data.
+
+Requires `X-API-Key`. Results include only systems allowed for that key.
 
 #### Response
 
@@ -131,6 +190,8 @@ Get statistics about the API usage and stored data.
 
 Stream the audio file for a specific radio call.
 
+Requires `X-API-Key`; an out-of-scope call is returned as not found.
+
 #### Parameters
 
 | Parameter | Type | Location | Description |
@@ -145,11 +206,9 @@ Stream the audio file for a specific radio call.
 #### Example
 
 ```bash
-# Download audio for call ID 123
-curl -o call_123.mp3 http://localhost:8080/api/calls/123/audio
-
-# Stream in browser or audio player
-# Just open: http://localhost:8080/api/calls/123/audio
+printf 'X-API-Key: %s\n' "$RDIO_API_KEY" | \
+  curl --header @- --output call_123.mp3 \
+    http://localhost:8080/api/calls/123/audio
 ```
 
 ## Test Mode
@@ -167,33 +226,37 @@ Limits come from `security.rate_limit` in config.yaml. Defaults:
 - 10,000 requests per hour
 - 100,000 requests per day
 
-These limits are applied per IP address and can be configured in `config.yaml`.
+These limits are applied per server-resolved client IP and can be configured in
+`config.yaml`. An arbitrary `X-API-Key` header never selects a new rate-limit
+bucket. `X-Forwarded-For` is used only through explicitly trusted proxy hops.
 
 ## Examples
 
 ### cURL Upload Example
 
 ```bash
-curl -X POST http://localhost:8080/api/call-upload \
-  -F "key=your-api-key" \
-  -F "system=1" \
-  -F "dateTime=1704123456" \
-  -F "frequency=460000000" \
-  -F "talkgroup=100" \
-  -F "systemLabel=My System" \
-  -F "talkgroupLabel=Dispatch" \
-  -F "audio=@recording.mp3"
+printf '%s' "$RDIO_API_KEY" | \
+  curl http://localhost:8080/api/call-upload \
+    --form 'key=<-' \
+    --form 'system=1' \
+    --form 'dateTime=1704123456' \
+    --form 'frequency=460000000' \
+    --form 'talkgroup=100' \
+    --form 'systemLabel=My System' \
+    --form 'talkgroupLabel=Dispatch' \
+    --form 'audio=@recording.mp3'
 ```
 
 ### Python Upload Example
 
 ```python
+import getpass
 import requests
 import time
 
 url = "http://localhost:8080/api/call-upload"
 data = {
-    'key': 'your-api-key',
+    'key': getpass.getpass('API key: '),
     'system': '1',
     'dateTime': str(int(time.time())),
     'frequency': '460000000',
@@ -201,21 +264,33 @@ data = {
     'systemLabel': 'My System',
     'talkgroupLabel': 'Dispatch'
 }
-files = {
-    'audio': ('recording.mp3', open('recording.mp3', 'rb'), 'audio/mpeg')
-}
 
-response = requests.post(url, data=data, files=files)
+with open('recording.mp3', 'rb') as audio:
+    files = {'audio': ('recording.mp3', audio, 'audio/mpeg')}
+    response = requests.post(
+        url,
+        data=data,
+        files=files,
+        timeout=(5, 30),
+        allow_redirects=False,
+    )
+
+data['key'] = ''
 print(response.json())
 ```
 
 ### Test Mode Example
 
 ```bash
-curl -X POST http://localhost:8080/api/call-upload \
-  -F "key=your-api-key" \
-  -F "system=1" \
-  -F "test=1"
+printf '%s' "$RDIO_API_KEY" | \
+  curl http://localhost:8080/api/call-upload \
+    --form 'key=<-' \
+    --form 'system=1' \
+    --form 'test=1'
+```
+
+```bash
+unset RDIO_API_KEY
 ```
 
 ## SDRTrunk Integration

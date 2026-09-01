@@ -256,7 +256,9 @@ class TestFileHandlingIntegration:
         """Test file cleanup operations."""
         # Create old temp files
         for i in range(5):
-            temp_file = file_handler.temp_dir / f"old_file_{i}.mp3"
+            # Cleanup is intentionally restricted to application-owned upload
+            # names so unrelated files in a shared temp directory survive.
+            temp_file = file_handler.temp_dir / f"upload_old_file_{i}.mp3"
             temp_file.write_bytes(b"test data")
             # Make file appear old
             import os

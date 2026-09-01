@@ -7,7 +7,7 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.135.3",
     "hypercorn>=0.18.0",
-    "h2>=4.3.0",
+    "h2>=4.4.1",
     "pydantic>=2.12.5",
     "pyyaml>=6.0.3",
     "sqlalchemy>=2.0.49",
@@ -20,14 +20,39 @@ dependencies = [
 sdrtrunk-rdio-api = "cli:main_sync"
 
 [build-system]
-requires = ["hatchling"]
+requires = [
+    "editables==0.5",
+    "hatchling==1.32.0",
+    "packaging==26.3",
+    "pathspec==1.1.1",
+    "pluggy==1.6.0",
+    "tomlkit==0.15.1",
+    "trove-classifiers==2026.6.1.19",
+]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src", "cli.py"]
 
-[tool.uv]
-dev-dependencies = [
+[tool.hatch.build.targets.sdist]
+# Keep local submodule checkouts, tests, operator configuration, and unrelated
+# repository files out of release archives. Metadata files required to build
+# the wheel from the sdist are included explicitly.
+include = [
+    "/src",
+    "/cli.py",
+    "/README.md",
+    "/LICENSE",
+    "/pyproject.toml",
+]
+
+[dependency-groups]
+build = [
+    "editables==0.5",
+    "hatchling==1.32.0",
+]
+dev = [
+    { include-group = "build" },
     "pytest>=8.4.0",
     "pytest-asyncio>=1.1.0",
     "pytest-cov>=6.2.0",
@@ -38,12 +63,27 @@ dev-dependencies = [
     "types-pyyaml",
     "isort>=6.0.0",
     "types-requests>=2.32.4.20250611",
-    "safety>=3.6.0",
     "bandit>=1.8.0",
-    "twine>=6.1.0",
     "pytest-benchmark>=5.1.0",
     "psutil>=6.1.1",
     "pip-audit>=2.9.0",
+    "pip>=26.2",
+    "pre-commit>=4.6.2",
+    "detect-secrets==1.5.0",
+]
+
+[tool.uv]
+# Keep local, CI, and container lock semantics on the reviewed uv release.
+required-version = "==0.12.7"
+# Mirror the PEP 517 backend pins as uv-wide build constraints so isolated
+# builds cannot select a different copy of these executable build tools.
+build-constraint-dependencies = [
+    "editables==0.5",
+    "packaging==26.3",
+    "pathspec==1.1.1",
+    "pluggy==1.6.0",
+    "tomlkit==0.15.1",
+    "trove-classifiers==2026.6.1.19",
 ]
 
 [tool.black]

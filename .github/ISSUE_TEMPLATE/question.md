@@ -16,11 +16,15 @@ Please provide any relevant context about your setup or use case.
 Please describe what you've already tried or researched.
 
 **Configuration (if relevant)**
+Never paste API keys or the contents of `security.api_keys`. Redact credentials,
+private addresses, and sensitive filesystem paths before submitting a public issue.
+
 ```yaml
-# Paste relevant parts of your config/config.yaml here
+# Paste only redacted, relevant configuration here
 ```
 
 **Environment (if relevant)**
+
 - OS: [e.g. Ubuntu 22.04]
 - Python version: [e.g. 3.13.2]
 - sdrtrunk-rdio-api version: [e.g. 0.1.0]

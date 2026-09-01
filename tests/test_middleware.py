@@ -1,5 +1,8 @@
 """Tests for middleware modules."""
 
+import asyncio
+
+import pytest
 from fastapi import FastAPI, Response
 from fastapi.testclient import TestClient
 
@@ -36,6 +39,8 @@ class TestSecurityHeadersMiddleware:
         assert "X-Frame-Options" in response.headers
         assert response.headers["X-Frame-Options"] == "DENY"
         assert "Referrer-Policy" in response.headers
+        assert response.headers["Cache-Control"] == "no-store"
+        assert response.headers["X-Permitted-Cross-Domain-Policies"] == "none"
 
     def test_security_headers_with_custom_headers(self):
         """Test security headers with custom headers."""
@@ -99,6 +104,352 @@ class TestRequestValidationMiddleware:
         # Test allowed content types
         assert "application/json" in middleware.ALLOWED_CONTENT_TYPES
         assert "multipart/form-data" in middleware.ALLOWED_CONTENT_TYPES
+
+    def test_streamed_body_limit_without_content_length(self):
+        """Actual ASGI chunks are capped when Content-Length is absent."""
+        sent = []
+        messages = iter(
+            [
+                {"type": "http.request", "body": b"123", "more_body": True},
+                {"type": "http.request", "body": b"456", "more_body": False},
+            ]
+        )
+
+        async def inner_app(scope, receive, send):
+            while True:
+                message = await receive()
+                if not message.get("more_body", False):
+                    return
+
+        async def receive():
+            return next(messages)
+
+        async def send(message):
+            sent.append(message)
+
+        scope = {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": "POST",
+            "scheme": "http",
+            "path": "/upload",
+            "raw_path": b"/upload",
+            "query_string": b"",
+            "headers": [(b"content-type", b"application/json")],
+            "client": ("127.0.0.1", 1234),
+            "server": ("test", 80),
+        }
+        middleware = RequestValidationMiddleware(inner_app, max_body_size_bytes=5)
+        asyncio.run(middleware(scope, receive, send))
+
+        response_start = next(
+            item for item in sent if item["type"] == "http.response.start"
+        )
+        assert response_start["status"] == 413
+
+    @pytest.mark.parametrize(
+        ("http_version", "headers"),
+        [
+            (
+                "1.1",
+                [
+                    (b"transfer-encoding", b"chunked"),
+                    (b"transfer-encoding", b"chunked"),
+                ],
+            ),
+            (
+                "1.1",
+                [
+                    (b"content-length", b"1"),
+                    (b"transfer-encoding", b"chunked"),
+                ],
+            ),
+            ("1.1", [(b"transfer-encoding", b"gzip, chunked")]),
+            ("2", [(b"transfer-encoding", b"chunked")]),
+        ],
+    )
+    def test_rejects_ambiguous_transfer_framing(self, http_version, headers):
+        sent = []
+        inner_called = False
+
+        async def inner_app(scope, receive, send):
+            nonlocal inner_called
+            inner_called = True
+
+        async def receive():
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def send(message):
+            sent.append(message)
+
+        scope = {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": http_version,
+            "method": "POST",
+            "scheme": "http",
+            "path": "/upload",
+            "raw_path": b"/upload",
+            "query_string": b"",
+            "headers": [
+                (b"content-type", b"application/json"),
+                *headers,
+            ],
+            "client": ("127.0.0.1", 1234),
+            "server": ("test", 80),
+        }
+
+        middleware = RequestValidationMiddleware(inner_app)
+        asyncio.run(middleware(scope, receive, send))
+
+        response_start = next(
+            item for item in sent if item["type"] == "http.response.start"
+        )
+        assert response_start["status"] == 400
+        assert not inner_called
+
+    def test_rejects_oversized_live_content_type_header(self):
+        response = self._request_with_content_type(
+            "multipart/form-data; boundary=x; ignored=" + "a" * 8192
+        )
+        assert response.status_code == 400
+
+    def test_non_multipart_body_has_small_preparse_limit(self):
+        """URL-encoded/JSON parsers must not materialize an audio-sized body."""
+        app = FastAPI()
+
+        @app.post("/upload")
+        async def upload():
+            return {"ok": True}
+
+        app.add_middleware(
+            RequestValidationMiddleware,
+            max_body_size_bytes=2 * 1024 * 1024,
+        )
+        oversized = b"x" * (
+            RequestValidationMiddleware.MAX_NON_MULTIPART_BODY_BYTES + 1
+        )
+        with TestClient(app) as client:
+            response = client.post(
+                "/upload",
+                content=oversized,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+
+        assert response.status_code == 413
+
+    def test_rejects_oversized_live_multipart_boundary(self):
+        response = self._request_with_content_type(
+            "multipart/form-data; boundary=" + "a" * 201
+        )
+        assert response.status_code == 400
+        assert response.json() == {"detail": "Invalid multipart boundary"}
+
+    def test_rejects_conflicting_duplicate_multipart_boundaries(self):
+        response = self._request_with_content_type(
+            "multipart/form-data; boundary=first; boundary=second"
+        )
+        assert response.status_code == 400
+        assert response.json() == {"detail": "Invalid multipart boundary"}
+
+    @pytest.mark.parametrize(
+        "method", ["GET", "HEAD", "OPTIONS", "PUT", "PATCH", "DELETE"]
+    )
+    def test_bodyless_methods_reject_declared_request_bodies(self, method: str):
+        app = FastAPI()
+
+        @app.api_route("/resource", methods=["GET", "HEAD", "OPTIONS"])
+        async def resource():
+            return {"ok": True}
+
+        app.add_middleware(RequestValidationMiddleware, max_body_size_bytes=1024)
+        with TestClient(app) as client:
+            response = client.request(method, "/resource", content=b"unexpected")
+
+        assert response.status_code == 400
+
+    def test_bodyless_methods_reject_chunked_transfer_encoding(self):
+        app_called = False
+
+        async def downstream(scope, receive, send):
+            nonlocal app_called
+            app_called = True
+
+        middleware = RequestValidationMiddleware(downstream, max_body_size_bytes=1024)
+        messages: list[dict[str, object]] = []
+
+        async def receive() -> dict[str, object]:
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def send(message: dict[str, object]) -> None:
+            messages.append(message)
+
+        scope = {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "GET",
+            "path": "/resource",
+            "headers": [(b"transfer-encoding", b"chunked")],
+        }
+        asyncio.run(middleware(scope, receive, send))  # type: ignore[arg-type]
+
+        assert not app_called
+        assert messages[0]["status"] == 400
+
+    def test_bodyless_methods_reject_undeclared_http2_data(self):
+        """HTTP/2 DATA frames are rejected even without framing headers."""
+        app_called = False
+
+        async def downstream(scope, receive, send):
+            nonlocal app_called
+            app_called = True
+
+        middleware = RequestValidationMiddleware(downstream, max_body_size_bytes=1024)
+        messages: list[dict[str, object]] = []
+
+        async def receive() -> dict[str, object]:
+            return {"type": "http.request", "body": b"unexpected", "more_body": False}
+
+        async def send(message: dict[str, object]) -> None:
+            messages.append(message)
+
+        scope = {
+            "type": "http",
+            "http_version": "2",
+            "method": "GET",
+            "path": "/resource",
+            "headers": [],
+        }
+        asyncio.run(middleware(scope, receive, send))  # type: ignore[arg-type]
+
+        assert not app_called
+        assert messages[0]["status"] == 400
+
+    def test_bodyless_http2_stream_has_independent_receive_timeout(self):
+        """Traffic on other H2 streams cannot pin a pre-routing receive."""
+        app_called = False
+
+        async def downstream(scope, receive, send):
+            nonlocal app_called
+            app_called = True
+
+        middleware = RequestValidationMiddleware(
+            downstream,
+            max_body_size_bytes=1024,
+            read_timeout_seconds=0.01,
+        )
+        messages: list[dict[str, object]] = []
+        never_received = asyncio.Event()
+
+        async def receive() -> dict[str, object]:
+            await never_received.wait()
+            raise AssertionError("unreachable")
+
+        async def send(message: dict[str, object]) -> None:
+            messages.append(message)
+
+        scope = {
+            "type": "http",
+            "http_version": "2",
+            "method": "GET",
+            "path": "/resource",
+            "headers": [],
+        }
+        asyncio.run(middleware(scope, receive, send))  # type: ignore[arg-type]
+
+        assert not app_called
+        assert messages[0]["status"] == 408
+
+    def test_stalled_post_stream_has_independent_receive_timeout(self):
+        async def downstream(scope, receive, send):
+            while True:
+                await receive()
+
+        middleware = RequestValidationMiddleware(
+            downstream,
+            max_body_size_bytes=1024,
+            read_timeout_seconds=0.01,
+        )
+        messages: list[dict[str, object]] = []
+        never_received = asyncio.Event()
+
+        async def receive() -> dict[str, object]:
+            await never_received.wait()
+            raise AssertionError("unreachable")
+
+        async def send(message: dict[str, object]) -> None:
+            messages.append(message)
+
+        scope = {
+            "type": "http",
+            "http_version": "2",
+            "method": "POST",
+            "path": "/upload",
+            "headers": [(b"content-type", b"application/json")],
+        }
+        asyncio.run(middleware(scope, receive, send))  # type: ignore[arg-type]
+
+        assert messages[0]["status"] == 408
+
+    def test_post_trickle_cannot_reset_absolute_body_deadline(self):
+        chunks_received = 0
+
+        async def downstream(scope, receive, send):
+            while True:
+                await receive()
+
+        middleware = RequestValidationMiddleware(
+            downstream,
+            max_body_size_bytes=1024,
+            read_timeout_seconds=0.03,
+        )
+        messages: list[dict[str, object]] = []
+
+        async def receive() -> dict[str, object]:
+            nonlocal chunks_received
+            await asyncio.sleep(0.005)
+            chunks_received += 1
+            return {"type": "http.request", "body": b"x", "more_body": True}
+
+        async def send(message: dict[str, object]) -> None:
+            messages.append(message)
+
+        scope = {
+            "type": "http",
+            "http_version": "2",
+            "method": "POST",
+            "path": "/upload",
+            "headers": [(b"content-type", b"application/json")],
+        }
+        asyncio.run(middleware(scope, receive, send))  # type: ignore[arg-type]
+
+        assert chunks_received > 1
+        assert messages[0]["status"] == 408
+
+    def test_bodyless_receive_timeout_uses_server_config(self):
+        middleware = RequestValidationMiddleware(None)
+
+        class FakeApp:
+            class state:
+                config = Config(server={"read_timeout_seconds": 17})
+
+        scope = {"app": FakeApp()}
+        assert middleware._read_timeout_from_scope(scope) == 17  # type: ignore[arg-type]
+
+    @staticmethod
+    def _request_with_content_type(content_type: str):
+        app = FastAPI()
+
+        @app.post("/upload")
+        async def upload():
+            return {"ok": True}
+
+        app.add_middleware(RequestValidationMiddleware, max_body_size_bytes=1024)
+        with TestClient(app) as client:
+            return client.post(
+                "/upload", content=b"x", headers={"Content-Type": content_type}
+            )
 
 
 class TestRateLimitMiddleware:

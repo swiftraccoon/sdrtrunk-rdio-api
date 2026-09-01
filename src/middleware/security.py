@@ -27,6 +27,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         "X-Download-Options": "noopen",
         # DNS prefetch control
         "X-DNS-Prefetch-Control": "off",
+        # Calls, metadata, metrics, and health state must not be replayed from
+        # a shared cache that does not key on the custom API-key header.
+        "Cache-Control": "no-store",
+        # Prevent legacy Adobe clients from loading cross-domain policy files.
+        "X-Permitted-Cross-Domain-Policies": "none",
         # Strict transport security (HSTS) - uncomment for HTTPS
         # "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
     }
@@ -43,7 +48,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         if custom_headers:
             self.security_headers.update(custom_headers)
         logger.info(
-            f"Security headers middleware initialized with {len(self.security_headers)} headers"
+            "Security headers middleware initialized with %d headers",
+            len(self.security_headers),
         )
 
     async def dispatch(

@@ -101,7 +101,7 @@ body:
     id: config
     attributes:
       label: Relevant Configuration
-      description: Please include any relevant configuration (remove sensitive data)
+      description: Never include security.api_keys; redact credentials, private addresses, and sensitive paths.
       render: yaml
       placeholder: |
         server:

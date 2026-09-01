@@ -1,60 +1,52 @@
 # Pre-commit hooks for code quality and security
-# Install with: pip install pre-commit && pre-commit install
+# Install with: make pre-commit
 
 repos:
-  # Black - Python code formatter
-  - repo: https://github.com/psf/black
-    rev: 24.10.0
+  # Use the exact Python tooling and transitive dependencies from uv.lock.
+  - repo: local
     hooks:
       - id: black
-        language_version: python3.11
+        name: black (locked project environment)
+        entry: uv run --locked black
+        language: system
+        types: [python]
 
-  # isort - Import sorting
-  - repo: https://github.com/PyCQA/isort
-    rev: 5.13.2
-    hooks:
       - id: isort
-        args: ["--profile", "black"]
+        name: isort (locked project environment)
+        entry: uv run --locked isort --profile black
+        language: system
+        types: [python]
 
-  # Ruff - Fast Python linter
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.4
-    hooks:
       - id: ruff
-        args: ["--fix"]
+        name: ruff (locked project environment)
+        entry: uv run --locked ruff check --fix
+        language: system
+        types: [python]
 
-  # MyPy - Static type checking
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.14.1
-    hooks:
       - id: mypy
-        additional_dependencies: [
-          "types-PyYAML",
-          "types-requests",
-          "pydantic",
-          "sqlalchemy[mypy]",
-        ]
-        args: ["--ignore-missing-imports", "--no-strict-optional"]
+        name: mypy (locked project environment)
+        entry: uv run --locked mypy
+        language: system
         files: ^src/
+        types: [python]
 
-  # Security checks with bandit
-  - repo: https://github.com/PyCQA/bandit
-    rev: 1.8.0
-    hooks:
       - id: bandit
-        args: ["-ll", "-r", "src/"]
+        name: bandit (locked project environment)
+        entry: uv run --locked bandit -ll
+        language: system
+        files: ^(src/|cli\.py$|scripts/)
         exclude: ^tests/
+        types: [python]
 
-  # Check for secrets
-  - repo: https://github.com/Yelp/detect-secrets
-    rev: v1.5.0
-    hooks:
       - id: detect-secrets
-        args: ["--baseline", ".secrets.baseline"]
+        name: detect-secrets (locked project environment)
+        entry: uv run --locked detect-secrets-hook --baseline .secrets.baseline
+        language: system
+        types: [text]
 
-  # YAML validation
+  # Generic repository hygiene checks.
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # v6.0.0  # pragma: allowlist secret
     hooks:
       - id: check-yaml
       - id: end-of-file-fixer
@@ -70,20 +62,13 @@ repos:
 
   # Markdown linting
   - repo: https://github.com/igorshubovych/markdownlint-cli
-    rev: v0.43.0
+    rev: 5b5dddc4fb0f83c3ea1fc5616fa63e115dce83e0 # v0.49.1  # pragma: allowlist secret
     hooks:
       - id: markdownlint
-        args: ["--fix"]
-
-  # SQL injection check in Python files
-  - repo: https://github.com/sqlfluff/sqlfluff
-    rev: 3.3.0
-    hooks:
-      - id: sqlfluff-lint
-        files: \.(sql|py)$
-        args: ["--dialect", "sqlite"]
+        args: ["--config", ".markdownlint.json", "--fix"]
+        language_version: "22.22.2"
 
 # Configuration
+minimum_pre_commit_version: "4.6.2"
 default_stages: [pre-commit]
 fail_fast: false
-verbose: true

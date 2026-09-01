@@ -1,0 +1,3 @@
+[submodule "ref/sdrtrunk"]
+	path = ref/sdrtrunk
+	url = https://github.com/DSheirer/sdrtrunk.git

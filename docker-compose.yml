@@ -2,18 +2,44 @@ services:
   sdrtrunk-rdio-api:
     build: .
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     volumes:
-      # Create config/config.yaml first (run `sdrtrunk-rdio-api init` or
-      # copy config/config.example.yaml). Mounting the directory instead
+      # The container runs as UID 1000. On Linux, config/config.yaml must be
+      # owned by UID 1000 and mode 0600; verify with `stat -c '%u %a'`.
+      # Docker Desktop, rootless Docker, and user-namespace remapping can expose
+      # different ownership/modes. Use a POSIX-permission-preserving WSL
+      # filesystem or a deployment-managed config/secret volume when the bind
+      # mount cannot present a UID-readable mode 0600 file. Do not weaken the
+      # file-mode check.
+      # Mounting the directory instead
       # of the file avoids Docker creating a directory named config.yaml
       # when the file is missing.
       - ./config:/app/config:ro
       - audio-data:/app/data
       - logs:/app/logs
     restart: unless-stopped
+    read_only: true
+    # SQLite scratch is intentionally separate from the larger upload spool.
+    # A missing-index upgrade needs roughly max(main database + WAL size,
+    # 32 MiB) plus a 32 MiB safety margin here; temporarily enlarge this bound
+    # for a larger legacy database when startup reports insufficient headroom.
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: 2.0
+    init: true
+    logging:
+      driver: "local"
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      test: ["CMD", "python", "-m", "src.healthcheck", "--config", "/app/config/config.yaml"]
       interval: 30s
       timeout: 10s
       start_period: 5s

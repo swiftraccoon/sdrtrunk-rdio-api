@@ -1,14 +1,15 @@
 version: 2
 updates:
-  # Enable version updates for Python dependencies in pyproject.toml
-  # Note: Dependabot uses "pip" ecosystem but reads pyproject.toml
-  # After merging PRs, run 'uv sync' to update uv.lock
-  - package-ecosystem: "pip"
+  # Use GitHub's native uv updater so pyproject.toml and uv.lock are maintained
+  # together. CI rejects any proposed update that leaves the lock inconsistent.
+  - package-ecosystem: "uv"
     directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
       time: "09:00"
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 10
     reviewers:
       - "swiftraccoon"
@@ -21,7 +22,7 @@ updates:
       - "dependencies"
       - "python"
       - "uv"
-    
+
   # Enable version updates for GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -29,6 +30,8 @@ updates:
       interval: "weekly"
       day: "monday"
       time: "09:00"
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     reviewers:
       - "swiftraccoon"
@@ -40,3 +43,46 @@ updates:
     labels:
       - "dependencies"
       - "github-actions"
+
+  # Refresh commit-pinned third-party hook repositories independently of the
+  # Python tools that are installed from uv.lock.
+  - package-ecosystem: "pre-commit"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    reviewers:
+      - "swiftraccoon"
+    assignees:
+      - "swiftraccoon"
+    commit-message:
+      prefix: "deps(pre-commit)"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "pre-commit"
+
+  # Keep digest-pinned runtime and build images on supported security releases.
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    reviewers:
+      - "swiftraccoon"
+    assignees:
+      - "swiftraccoon"
+    commit-message:
+      prefix: "deps(container)"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "docker"

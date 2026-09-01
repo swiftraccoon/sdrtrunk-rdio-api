@@ -5,42 +5,204 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
-  PYTHON_VERSION: "3.13"
+  # Release artifacts should not change when uv's moving 3.13 alias advances.
+  PYTHON_VERSION: "3.13.15"
+  UV_PYTHON: "3.13.15"
+  UV_VERSION: "0.12.7"
+  # Releases must use the reviewed lockfile exactly; never resolve or rewrite
+  # dependencies implicitly during a release job.
+  UV_LOCKED: "1"
+  # Hatchling and its complete build graph are installed from uv.lock before
+  # any project code is built; do not create an untracked PEP 517 environment.
+  UV_NO_BUILD_ISOLATION: "1"
 
 jobs:
-  build:
-    name: Build Distribution
+  verify:
+    name: Verify Release Source
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       with:
         fetch-depth: 0
+        persist-credentials: false
+
+    - name: Verify tagged commit is on main
+      shell: bash
+      run: |
+        git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+        tagged_commit="$(git rev-parse 'HEAD^{commit}')"
+        if ! git merge-base --is-ancestor "$tagged_commit" refs/remotes/origin/main; then
+          echo "Refusing to release a tag whose commit is not on origin/main" >&2
+          exit 1
+        fi
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v7
+      uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
       with:
-        version: "latest"
+        version: ${{ env.UV_VERSION }}
+        enable-cache: false
 
     - name: Set up Python
-      run: uv python install ${{ env.PYTHON_VERSION }}
+      run: uv python install "$PYTHON_VERSION"
+
+    - name: Verify tag matches package version
+      env:
+        RELEASE_TAG: ${{ github.ref_name }}
+      shell: bash
+      run: |
+        python3 - <<'PY'
+        import os
+        import sys
+        import tomllib
+        from pathlib import Path
+
+        tag = os.environ["RELEASE_TAG"]
+        package_version = tomllib.loads(
+            Path("pyproject.toml").read_text(encoding="utf-8")
+        )["project"]["version"]
+        if not tag.startswith("v") or tag[1:] != package_version:
+            print(
+                f"Refusing release: tag {tag!r} does not match "
+                f"package version {package_version!r}",
+                file=sys.stderr,
+            )
+            raise SystemExit(1)
+        PY
+
+    - name: Install locked dependencies
+      run: |
+        uv sync --locked --only-group build --no-install-project --no-build
+        uv sync --all-extras --dev --locked --no-build-isolation
+
+    - name: Run frozen formatting, lint, and type checks
+      run: |
+        uv run --locked black --check --diff .
+        uv run --locked isort --check-only --diff .
+        uv run --locked ruff check .
+        uv run --locked mypy src --show-error-codes
+
+    - name: Run tests
+      run: uv run --locked pytest -q --tb=short
+
+    - name: Run Bandit security scan
+      run: uv run --locked bandit -r src/ cli.py scripts/ -ll
+
+    - name: Audit locked runtime dependencies
+      run: |
+        uv export --quiet --locked --no-dev --no-emit-project --format requirements-txt --output-file runtime-requirements.txt
+        uv run --locked pip-audit --disable-pip --require-hashes --requirement runtime-requirements.txt
+
+    - name: Audit locked development dependencies
+      run: |
+        uv export --quiet --locked --all-groups --no-emit-project --format requirements-txt --output-file development-requirements.txt
+        uv run --locked pip-audit --disable-pip --require-hashes --requirement development-requirements.txt
+
+    - name: Scan release history for secrets
+      uses: trufflesecurity/trufflehog@20652fbbdefffcdaa493a5bf57ab2ac6b1db715b # v3.97.1
+      with:
+        path: ./
+        head: HEAD
+        version: "3.97.1@sha256:deb2af10659a488a14d262a323addcde099d99827a1cf1dc4e93c17915c39f08"
+
+  build:
+    name: Build Distribution
+    runs-on: ubuntu-latest
+    needs: [verify]
+    permissions:
+      contents: read
+
+    steps:
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+      with:
+        version: ${{ env.UV_VERSION }}
+        enable-cache: false
+
+    - name: Set up Python
+      run: uv python install "$PYTHON_VERSION"
 
     - name: Install dependencies
-      run: uv sync --all-extras --dev
+      run: |
+        uv sync --locked --only-group build --no-install-project --no-build
+        uv sync --all-extras --dev --locked --no-build-isolation
 
     - name: Build distribution packages
-      run: uv build
+      run: uv build --no-build-isolation --no-create-gitignore --python .venv/bin/python
 
     - name: Check package quality
-      run: uv run twine check dist/*
+      run: uv publish --dry-run --trusted-publishing never dist/*.tar.gz dist/*.whl
+
+    - name: Generate release checksums
+      working-directory: dist
+      shell: bash
+      run: |
+        shopt -s nullglob
+        sdists=(*.tar.gz)
+        wheels=(*.whl)
+        if (( ${#sdists[@]} != 1 || ${#wheels[@]} != 1 )); then
+          echo "Expected exactly one source archive and one wheel" >&2
+          exit 1
+        fi
+        if [[ -n "$(find . -mindepth 1 -maxdepth 1 ! \( -type f \( -name '*.tar.gz' -o -name '*.whl' \) \) -print -quit)" ]]; then
+          echo "Refusing unexpected entry in dist/" >&2
+          exit 1
+        fi
+        sha256sum -- "${sdists[@]}" "${wheels[@]}" > SHA256SUMS
 
     - name: Upload build artifacts
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      with:
+        name: dist-packages
+        path: |
+          dist/*.tar.gz
+          dist/*.whl
+          dist/SHA256SUMS
+        retention-days: 7
+
+  attest:
+    name: Attest Distribution Provenance
+    runs-on: ubuntu-latest
+    needs: [build]
+    permissions:
+      contents: read
+      # Keep OIDC and attestation authority out of the job that executes the
+      # project build backend and third-party Python dependencies.
+      id-token: write # OIDC identity is required to sign provenance.
+      attestations: write # Required to publish GitHub artifact attestations.
+
+    steps:
+    - name: Download build artifacts
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
       with:
         name: dist-packages
         path: dist/
-        retention-days: 7
+
+    - name: Verify build checksums before attestation
+      working-directory: dist
+      shell: bash
+      run: sha256sum --check --strict SHA256SUMS
+
+    - name: Attest build provenance
+      uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+      with:
+        subject-path: |
+          dist/*.tar.gz
+          dist/*.whl
+          dist/SHA256SUMS
 
   docker:
     name: Build Docker Image
@@ -48,53 +210,93 @@ jobs:
     needs: [build]
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      with:
+        persist-credentials: false
 
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v4
+      uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+      with:
+        version: "v0.36.1"
+        driver-opts: image=moby/buildkit:v0.32.2@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8
+        cache-binary: false
 
     - name: Extract version
       id: version
-      run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+      run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
 
     - name: Build Docker image
-      uses: docker/build-push-action@v7
+      uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
       with:
         context: .
+        load: true
         push: false
         tags: |
           rdiocallsapi:latest
           rdiocallsapi:${{ steps.version.outputs.version }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+
+    - name: Export image for isolated scanning
+      shell: bash
+      env:
+        IMAGE_VERSION: ${{ steps.version.outputs.version }}
+      run: docker image save --output "${RUNNER_TEMP}/rdiocallsapi.tar" "rdiocallsapi:${IMAGE_VERSION}"
+
+    - name: Scan release image for high and critical vulnerabilities
+      run: |
+        docker run --rm \
+          --cap-drop ALL \
+          --security-opt no-new-privileges \
+          --volume "${RUNNER_TEMP}/rdiocallsapi.tar:/image.tar:ro" \
+          aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
+          image --exit-code 1 --scanners vuln \
+          --pkg-types os,library --severity HIGH,CRITICAL \
+          --input /image.tar
 
   release:
     name: Create Release
     runs-on: ubuntu-latest
-    needs: [build, docker]
+    needs: [attest, docker]
+    permissions:
+      contents: write # Required only to create this tag's GitHub Release.
 
     steps:
-    - uses: actions/checkout@v6
-      with:
-        fetch-depth: 0
-
     - name: Download build artifacts
-      uses: actions/download-artifact@v8
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
       with:
         name: dist-packages
         path: dist/
 
+    - name: Verify release checksums
+      working-directory: dist
+      shell: bash
+      run: sha256sum --check --strict SHA256SUMS
+
     - name: Extract version
       id: version
-      run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+      run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
 
     - name: Create GitHub Release
-      uses: softprops/action-gh-release@v2
-      with:
-        files: dist/*
-        draft: false
-        prerelease: ${{ contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
-        body: |
-          Release ${{ steps.version.outputs.version }}
-
-          See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
+      env:
+        GH_TOKEN: ${{ github.token }}
+        RELEASE_TAG: ${{ github.ref_name }}
+        RELEASE_VERSION: ${{ steps.version.outputs.version }}
+      shell: bash
+      run: |
+        notes_file="${RUNNER_TEMP}/release-notes.md"
+        {
+          printf 'Release %s\n\n' "$RELEASE_VERSION"
+          printf '%s\n' 'Artifacts include SHA256SUMS and GitHub build provenance.'
+          printf 'Verify with: gh attestation verify <file> --repo %s\n\n' "$GITHUB_REPOSITORY"
+          printf 'See [CHANGELOG.md](https://github.com/%s/blob/%s/CHANGELOG.md) for details.\n' \
+            "$GITHUB_REPOSITORY" "$GITHUB_SHA"
+        } > "$notes_file"
+        prerelease_args=()
+        if [[ "$RELEASE_TAG" == *beta* || "$RELEASE_TAG" == *rc* ]]; then
+          prerelease_args+=(--prerelease)
+        fi
+        gh release create "$RELEASE_TAG" \
+          dist/*.tar.gz dist/*.whl dist/SHA256SUMS \
+          --verify-tag \
+          --title "$RELEASE_TAG" \
+          --notes-file "$notes_file" \
+          "${prerelease_args[@]}"

@@ -36,9 +36,9 @@ Fixes #(issue number)
 - [ ] Added new tests for the changes
 
 - [ ] Tested manually with the following scenarios
-  -
+  - [First scenario]
 
-  -
+  - [Second scenario]
 
 ### Test Coverage
 

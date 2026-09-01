@@ -91,7 +91,7 @@ uv run sdrtrunk-rdio-api init
 
 You should see:
 
-```
+```text
 [SUCCESS] Generated configuration at config/config.yaml
 ```
 
@@ -102,19 +102,28 @@ to the next step and edit the existing file.)
 
 Open `config/config.yaml` in any text editor (Notepad, TextEdit, etc.).
 Find the `security:` section - the API key lines are commented out with `#`.
-Remove the `#` characters and set your own key so it looks like this:
+First generate a random key:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Remove the `#` characters and paste that value so the section looks like this:
 
 ```yaml
 security:
   api_keys:
-    - key: "your-secret-api-key-here"  # Change this to something unique
+    - key: "PASTE-THE-GENERATED-RANDOM-KEY-HERE"
+      identifier: "main-scanner"
       description: "My SDRTrunk Setup"
       allowed_ips: []
       allowed_systems: []
 ```
 
-**Important**: Make your API key something only you know, like `my-scanner-2025-secret`.
-Keep the two-space indentation exactly as shown - YAML is picky about that.
+**Important**: keys must be 16-512 characters. Keep the two-space indentation
+exactly as shown—YAML is picky about that. Missing, blank, too-short, or
+misspelled security
+configuration stops startup rather than enabling anonymous access.
 
 ### Step 7: Test the Server
 
@@ -124,14 +133,14 @@ uv run sdrtrunk-rdio-api serve
 
 You should see:
 
-```
+```text
 >> Starting sdrtrunk-rdio-api Server
   - Config: config/config.yaml
-  - Address: http://0.0.0.0:8080
+  - Address: http://127.0.0.1:8080
   - HTTP/2: Enabled (required for SDRTrunk)
   - Processing Mode: store
   - Debug Mode: False
-  - API Docs: http://0.0.0.0:8080/docs
+  - API Docs: http://127.0.0.1:8080/docs
   - Database: data/rdio_calls.db
   - Audio Storage: data/audio
   - API Keys: 1 configured
@@ -139,8 +148,8 @@ You should see:
 Press Ctrl+C to stop the server
 ```
 
-If the Config line says `NOT FOUND - using built-in defaults!`, the server
-could not find your config file - make sure it's at `config/config.yaml`.
+If the config file is missing or invalid, the server exits with an error. Do
+not bypass that check; create or repair `config/config.yaml`.
 
 Great! Your server is running. Keep this window open and open a new terminal/command prompt for the next steps.
 
@@ -173,12 +182,16 @@ Now we need to tell SDRTrunk to send audio files to your server:
 6. **Fill in the settings:**
    - **Host**: `localhost` (if SDRTrunk is on the same computer)
    - **Port**: `8080`
-   - **API Key**: `your-secret-api-key-here` (whatever you put in config.yaml)
+   - **API Key**: the generated value you put in `config.yaml`
    - **System ID**: `1` (or whatever number represents your radio system)
 7. **Click "Test"** - you should see "Test successful!"
    (The test checks your API key, so if the key is wrong you'll find out
    here rather than after calls silently fail.)
 8. **Click "Save"**
+
+By default the server accepts connections only from the same computer. If
+SDRTrunk is on another host, set `server.host: "0.0.0.0"`, restrict the port to
+the scanner/proxy addresses with a firewall, and use TLS on untrusted networks.
 
 ### Step 10: Start Recording
 
@@ -210,14 +223,14 @@ When SDRTrunk receives radio transmissions:
 
 Your audio files will be organized like this (dates and times are UTC):
 
-```
+```text
 data/audio/
 ├── 2025/
 │   ├── 01/
 │   │   ├── 15/
 │   │   │   ├── 1/           # System ID 1
-│   │   │   │   ├── 20250115_143022_SYS1_TG100_Dispatch.mp3
-│   │   │   │   ├── 20250115_143045_SYS1_TG200_Fire_Ops.mp3
+│   │   │   │   ├── 20250115_143022_SYS1_TG100_Dispatch_a1b2c3d4e5f6.mp3
+│   │   │   │   ├── 20250115_143045_SYS1_TG200_Fire_Ops_1234abcde567.mp3
 │   │   │   │   └── ...
 ```
 
@@ -248,7 +261,15 @@ uv run sdrtrunk-rdio-api serve --log-level DEBUG
 Once your server is running, you can view:
 
 - **Server health**: <http://localhost:8080/health>
-- **Usage statistics**: <http://localhost:8080/metrics>
+- **Usage statistics** (Bash/Zsh):
+
+  ```bash
+  RDIO_API_KEY="$(python -c 'import getpass; print(getpass.getpass("API key: "))')"
+  printf 'X-API-Key: %s\n' "$RDIO_API_KEY" | \
+    curl --header @- http://localhost:8080/metrics
+  unset RDIO_API_KEY
+  ```
+
 - **API documentation**: <http://localhost:8080/docs>
 
 ## Stopping the Server
@@ -267,7 +288,8 @@ To stop the server, go back to the terminal where it's running and press `Ctrl+C
 
 - Make sure the server is running (you should see the startup message)
 - Check that the port number matches (8080 by default)
-- If SDRTrunk is on a different computer, use that computer's IP address instead of "localhost"
+- If SDRTrunk is on a different computer, widen `server.host` deliberately,
+  use the server's IP instead of `localhost`, and check the firewall
 
 ### "Invalid API key" errors
 

@@ -83,6 +83,9 @@ def test_config_dict(temp_dir: Path) -> dict:
         },
         "security": {
             "api_keys": [],  # No API keys for testing
+            # Legacy endpoint tests deliberately exercise anonymous mode.
+            "allow_unauthenticated_uploads": True,
+            "allow_unauthenticated_reads": True,
             "rate_limit": {
                 "enabled": False,
                 "max_requests_per_minute": 60,

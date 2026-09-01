@@ -6,8 +6,8 @@ We release patches for security vulnerabilities. Currently supported versions:
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.0.x   | :white_check_mark: |
-| < 1.0   | :x:                |
+| Latest release / `main` | :white_check_mark: |
+| Older releases          | Best effort        |
 
 ## Reporting a Vulnerability
 
@@ -43,7 +43,9 @@ We take the security of sdrtrunk-rdio-api seriously. If you believe you have fou
 - API key-based authentication
 - IP-based access restrictions
 - System-based access control
-- Rate limiting per API key/IP
+- Authenticated query, metrics, and audio endpoints
+- System- and IP-scoped keys with stable audit identifiers
+- Rate limiting by a server-resolved client IP
 
 #### Input Validation
 
@@ -53,6 +55,8 @@ We take the security of sdrtrunk-rdio-api seriously. If you believe you have fou
 - File type validation
 - File size limits
 - Request size limits
+- Bounded streaming multipart parsing
+- Strict MP3 extension, MIME, and signature checks
 
 #### Network Security
 
@@ -60,13 +64,17 @@ We take the security of sdrtrunk-rdio-api seriously. If you believe you have fou
 - Content Security Policy (CSP)
 - CORS configuration
 - Rate limiting
+- Trusted-proxy chain validation
+- Optional built-in TLS and bounded request read timeouts
 
 #### Data Protection
 
-- No sensitive data in logs
+- API key values are excluded from logs; persisted audit metadata is bounded
 - Secure file storage
+- Mode-0600 configuration, database, log, temporary, and audio files
 - Database query parameterization
 - Error message sanitization
+- Retention based on server receipt time and SQLite deleted-cell scrubbing
 
 ### Security Best Practices for Deployment
 
@@ -76,11 +84,15 @@ Always deploy with HTTPS in production:
 
 ```yaml
 server:
-  host: 0.0.0.0
-  port: 443
+  host: 127.0.0.1
+  port: 8443
   ssl_cert: /path/to/cert.pem
-  ssl_key: /path/to/key.pem
+  ssl_key: /path/to/private-key.pem
 ```
+
+Configure both TLS paths or neither; a partial pair fails validation. Binding
+to `0.0.0.0` is appropriate only with a firewall or a hardened reverse proxy.
+When TLS terminates at a same-host proxy, keep the application on loopback.
 
 #### 2. Configure Strong API Keys
 
@@ -98,22 +110,30 @@ Configure IP restrictions for API keys:
 ```yaml
 security:
   api_keys:
-    - key: "your-secure-api-key"
+    - key: "PASTE-A-UNIQUE-32-BYTE-RANDOM-KEY-HERE"
+      identifier: "scanner-1"
       description: "SDRTrunk Instance 1"
       allowed_ips: ["192.168.1.100"]
       allowed_systems: ["1"]
 ```
 
+Keys shorter than 16 characters and blank keys are rejected. Every key also
+requires a unique, public `identifier`; credential-derived fingerprints are
+not stored. Never pass a key directly on a command line, commit it, or include
+it in diagnostic output.
+Leave `allow_unauthenticated_uploads` and `allow_unauthenticated_reads` false.
+
 #### 4. Database Security
 
-- Use a dedicated database user with minimal privileges
-- Enable database encryption at rest
-- Regular backups with encryption
+- Run the process under a dedicated operating-system account
+- Keep the SQLite database and backups mode 0600
+- Encrypt the host volume and off-host backups when confidentiality matters
+- Test restoration regularly and protect backup retention separately
 
 #### 5. File Storage Security
 
 - Store files outside the web root
-- Implement proper file permissions (644 for files, 755 for directories)
+- Keep files mode 0600 and state directories mode 0700
 - Regular cleanup of old files
 - Virus scanning for uploaded files (recommended)
 
@@ -132,16 +152,91 @@ security:
 - Monitor security advisories
 - Apply security patches promptly
 
+### Platform and Availability Boundaries
+
+- POSIX deployments provide the strongest local-filesystem guarantees: private
+  modes, descriptor-relative traversal, no-follow opens, and directory fsync.
+  On macOS, private files and roots also fail closed when an extended ACL grants
+  access beyond the Unix mode bits; the standard deny-only home-directory ACL
+  remains supported. Remove an unsafe inherited ACL with `chmod -RN PATH`
+  before startup.
+  Run the service under a dedicated account; another process with the same UID
+  is inside the trust boundary and can replace paths used by SQLite, Hypercorn,
+  or the standard-library logging handler.
+- Python's `chmod(0600/0700)` does not create or validate a restrictive Windows
+  DACL and pathname checks cannot fully exclude junction/reparse-point races.
+  Ambiguous Win32 names (ADS, DOS devices and 8.3-looking aliases, trailing
+  dot/space names, and device/extended namespaces) are rejected, but that does
+  not replace a restrictive DACL.
+  Multi-user Windows confidentiality is therefore unsupported unless an
+  administrator separately grants the service identity (plus SYSTEM/admins)
+  exclusive NTFS access to the config, database, log, temp, storage, export,
+  certificate, and backup trees. Prefer a dedicated Linux container/host when
+  that guarantee is required.
+- Application rate limits, eight global upload-parse slots, per-IP admission,
+  byte limits, and parse deadlines bound local resource use; they are not a
+  distributed denial-of-service perimeter. RdioScanner credentials are carried
+  inside the multipart body and cannot be authenticated until bounded parsing
+  reaches them. Internet-facing deployments need a firewall or reverse proxy
+  with connection limits, header/body timeouts, minimum body-rate enforcement,
+  and its own source-aware rate limits.
+- Archive quota reconciliation intentionally closes readiness and upload
+  admission until accounting is certain. Very large archives can take time to
+  scan. Monitor `/health`, keep archives within operationally reasonable file
+  counts, and use the supported single-worker server unless quota coordination
+  is provided outside this process.
+- First-upgrade index creation uses filesystem-backed SQLite sorting and
+  conservatively verifies database/WAL/sort scratch headroom before each
+  missing required index. A large legacy database can therefore fail startup
+  closed until sufficient free bytes and inodes are available; take a backup
+  and perform that upgrade during an operator-controlled maintenance window.
+  On Unix, preflight follows SQLite's `SQLITE_TMPDIR`, then `TMPDIR`, selection
+  rather than Python's different temporary-directory choice. A separate
+  scratch filesystem must retain a fixed 32 MiB safety margin after reserving
+  `max(main database + WAL size, 32 MiB)`; a shared database/scratch device
+  instead keeps the full configured persistent-state byte and inode reserves.
+  The supplied 64 MiB tmpfs therefore needs temporary enlargement for a
+  missing-index upgrade when the legacy database plus WAL is larger than
+  32 MiB.
+- Authenticated archive scans have both a 15-second SQLite progress deadline
+  and a fixed virtual-machine instruction ceiling. SQLite aggregate/sort
+  scratch still belongs on a separately bounded temporary filesystem: the
+  supplied container directs it to the 64 MiB `/tmp` tmpfs. Native deployments
+  should set `SQLITE_TMPDIR` to a private, quota-limited filesystem; a plain
+  directory on an otherwise unbounded volume is not a hard scratch-space cap.
+- The server and the destructive/long-snapshot `clean` and `export` commands
+  use a kernel advisory lock per database directory. Run those CLI commands only after
+  stopping the server; they fail closed when another protected process owns the
+  lock. Direct library callers and non-cooperating same-UID processes remain
+  inside the local trust boundary.
+- The server holds a separate advisory lock for the active rotating-log family;
+  a second process cannot append or roll it concurrently. CLI commands log to
+  the console only, and configured database sidecars, log rotations/lock, TLS,
+  config, key, backup, export, storage, and temp paths are checked for aliases
+  before mutation.
+- CLI monitoring and cleanup-preview reads open the existing database with
+  SQLite `mode=ro` and `query_only`, skip schema/journal initialization, apply
+  the same bounded-query deadline, and close their snapshot before terminal
+  output. A blocked output pipe therefore cannot pin a live service WAL.
+- Retention performs logical deletion: SQLite `secure_delete`, WAL checkpointing,
+  and audio-file unlinking reduce ordinary recovery exposure, but cannot promise
+  forensic erasure from SSD wear-leveling, copy-on-write filesystems, snapshots,
+  replicas, or backups. Use encrypted volumes and apply the same retention policy
+  to every snapshot and backup when deletion guarantees matter.
+
 ### Security Checklist
 
 Before deploying to production:
 
 - [ ] HTTPS configured and enforced
 - [ ] Strong API keys generated and configured
+- [ ] Anonymous compatibility flags are false
 - [ ] IP restrictions configured where appropriate
 - [ ] Database user has minimal required privileges
 - [ ] File upload directory is outside web root
 - [ ] Proper file permissions set
+- [ ] Service binds only to the intended interfaces
+- [ ] `trusted_proxies` contains only controlled proxy peers
 - [ ] Logging configured and monitored
 - [ ] Rate limiting enabled
 - [ ] Security headers configured
@@ -173,9 +268,10 @@ For high-security environments or compliance requirements (HIPAA, PCI-DSS, etc.)
 We use the following tools to maintain security:
 
 - **bandit**: Security linting for Python code
-- **safety**: Dependency vulnerability scanning
+- **pip-audit**: Python dependency vulnerability scanning
 - **mypy**: Type checking to prevent type-related vulnerabilities
-- **ruff**: Linting with security rules
+- **ruff**: Python linting
+- **TruffleHog**: Credential scanning
 - **GitHub Dependabot**: Automated dependency updates
 
 ## Acknowledgments

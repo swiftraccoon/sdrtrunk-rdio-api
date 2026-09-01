@@ -1,65 +1,18 @@
-# Git
-.git/
-.gitignore
-.github/
+# Send only declared build inputs to the daemon/remote builder. An allowlist
+# prevents an unrecognized local secret, database, recording, or editor file
+# from entering the build context at all.
+**
 
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-htmlcov/
-.coverage
-*.egg-info/
-dist/
-build/
-
-# Virtual environments
-venv/
-env/
-ENV/
-.venv/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*.swn
-.DS_Store
-
-# Data and logs (will be created in container)
-data/
-logs/
-*.log
-*.db
-*.sqlite
-
-# Config (use example)
-config.yaml
-
-# Documentation
-docs/
-*.md
+!Dockerfile
+!.dockerignore
+!pyproject.toml
+!uv.lock
 !README.md
+!LICENSE
+!cli.py
 
-# Testing
-tests/
-test_*.py
-*_test.py
+!src/
+!src/**
 
-# CI/CD
-.github/
-Makefile
-.pre-commit-config.yaml
-
-# Misc
-.env
-.env.*
-*.bak
-*.tmp
-temp/
+!config/
+!config/config.example.yaml

@@ -1,7 +1,11 @@
 """Tests for database operations."""
 
+import os
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
+
+import pytest
 
 from src.database.connection import DatabaseManager
 from src.database.operations import DatabaseOperations
@@ -52,6 +56,29 @@ class TestDatabaseManager:
             # Should be able to query
             count = session.query(RadioCall).count()
             assert count == 0
+
+    @pytest.mark.skipif(os.name != "posix", reason="POSIX symlink semantics")
+    def test_database_rejects_user_controlled_symlink_ancestor(
+        self, temp_dir: Path
+    ) -> None:
+        target = temp_dir / "target"
+        target.mkdir()
+        redirect = temp_dir / "redirect"
+        redirect.symlink_to(target, target_is_directory=True)
+
+        with pytest.raises(OSError, match="symlink"):
+            DatabaseManager(str(redirect / "service.db"))
+
+    @pytest.mark.skipif(os.name != "posix", reason="POSIX permission semantics")
+    def test_database_rejects_writable_user_controlled_ancestor(
+        self, temp_dir: Path
+    ) -> None:
+        unsafe = temp_dir / "unsafe"
+        unsafe.mkdir()
+        unsafe.chmod(0o777)
+
+        with pytest.raises(PermissionError, match="group/world writable"):
+            DatabaseManager(str(unsafe / "service.db"))
 
 
 class TestDatabaseOperations:
@@ -153,7 +180,11 @@ class TestDatabaseOperations:
                 talkgroup=100 if i % 2 == 0 else 200,
                 audio_size=1024 * (i + 1),
             )
-            db_ops.save_radio_call(upload_data, upload_ip="127.0.0.1")
+            db_ops.save_radio_call(
+                upload_data,
+                audio_file_path=f"/audio/test-{i}.mp3",
+                upload_ip="127.0.0.1",
+            )
 
         stats = db_ops.get_statistics()
 
@@ -164,6 +195,185 @@ class TestDatabaseOperations:
         assert "456" in stats["systems"]
         assert stats["storage_used_mb"] > 0
 
+    def test_statistics_excludes_log_only_audio_sizes(
+        self, db_manager: DatabaseManager
+    ) -> None:
+        db_ops = DatabaseOperations(db_manager)
+        upload = create_test_upload(audio_size=4 * 1024 * 1024)
+        db_ops.save_radio_call(upload, audio_file_path=None)
+        stored = create_test_upload(audio_size=1024 * 1024)
+        db_ops.save_radio_call(stored, audio_file_path="/audio/stored.mp3")
+
+        stats = db_ops.get_statistics()
+
+        assert stats["audio_files_count"] == 1
+        assert stats["storage_used_mb"] == 1.0
+
+    def test_audio_path_reference_checks_use_startup_migrated_index(
+        self, db_manager: DatabaseManager
+    ) -> None:
+        with db_manager.engine.begin() as connection:
+            connection.exec_driver_sql("DROP INDEX idx_audio_file_path")
+        database_path = str(db_manager.database_path)
+        db_manager.close()
+
+        reopened = DatabaseManager(database_path)
+        try:
+            with reopened.engine.connect() as connection:
+                indexes = {
+                    row[1]
+                    for row in connection.exec_driver_sql(
+                        "PRAGMA index_list('radio_calls')"
+                    ).fetchall()
+                }
+                plan = connection.exec_driver_sql(
+                    "EXPLAIN QUERY PLAN SELECT id FROM radio_calls "
+                    "WHERE audio_file_path IN ('/audio/example.mp3')"
+                ).fetchall()
+            assert "idx_audio_file_path" in indexes
+            assert any("idx_audio_file_path" in str(row) for row in plan)
+        finally:
+            reopened.close()
+
+    def test_retention_selection_uses_startup_migrated_indexes(
+        self, db_manager: DatabaseManager
+    ) -> None:
+        with db_manager.engine.begin() as connection:
+            connection.exec_driver_sql("DROP INDEX idx_created_at_desc")
+            connection.exec_driver_sql("DROP INDEX ix_upload_logs_timestamp")
+        database_path = str(db_manager.database_path)
+        db_manager.close()
+
+        reopened = DatabaseManager(database_path)
+        try:
+            with reopened.engine.connect() as connection:
+                call_indexes = {
+                    row[1]
+                    for row in connection.exec_driver_sql(
+                        "PRAGMA index_list('radio_calls')"
+                    ).fetchall()
+                }
+                log_indexes = {
+                    row[1]
+                    for row in connection.exec_driver_sql(
+                        "PRAGMA index_list('upload_logs')"
+                    ).fetchall()
+                }
+                call_plan = connection.exec_driver_sql(
+                    "EXPLAIN QUERY PLAN SELECT id, audio_file_path FROM radio_calls "
+                    "WHERE created_at < '2025-01-01' "
+                    "ORDER BY created_at, id LIMIT 500"
+                ).fetchall()
+                log_plan = connection.exec_driver_sql(
+                    "EXPLAIN QUERY PLAN SELECT id FROM upload_logs "
+                    "WHERE timestamp < '2025-01-01' "
+                    "ORDER BY timestamp, id LIMIT 500"
+                ).fetchall()
+            call_plan_text = " ".join(str(row) for row in call_plan)
+            log_plan_text = " ".join(str(row) for row in log_plan)
+            assert "idx_created_at_desc" in call_indexes
+            assert "idx_created_at_desc" in call_plan_text
+            assert "USE TEMP B-TREE FOR ORDER BY" not in call_plan_text
+            assert "ix_upload_logs_timestamp" in log_indexes
+            assert "ix_upload_logs_timestamp" in log_plan_text
+            assert "USE TEMP B-TREE FOR ORDER BY" not in log_plan_text
+        finally:
+            reopened.close()
+
+    def test_pending_deletion_scheduler_uses_startup_migrated_indexes(
+        self, db_manager: DatabaseManager
+    ) -> None:
+        with db_manager.engine.begin() as connection:
+            connection.exec_driver_sql("DROP INDEX idx_pending_claim_next_attempt")
+            connection.exec_driver_sql("DROP INDEX idx_pending_claimed_at")
+            connection.exec_driver_sql(
+                "DROP INDEX ix_pending_file_deletions_next_attempt_at"
+            )
+        database_path = str(db_manager.database_path)
+        db_manager.close()
+
+        reopened = DatabaseManager(database_path)
+        try:
+            with reopened.engine.connect() as connection:
+                indexes = {
+                    row[1]
+                    for row in connection.exec_driver_sql(
+                        "PRAGMA index_list('pending_file_deletions')"
+                    ).fetchall()
+                }
+                due_plan = connection.exec_driver_sql(
+                    "EXPLAIN QUERY PLAN SELECT id FROM pending_file_deletions "
+                    "WHERE (next_attempt_at IS NULL "
+                    "OR next_attempt_at <= '2025-01-01') "
+                    "AND (claim_token IS NULL OR claimed_at IS NULL "
+                    "OR claimed_at < '2025-01-01') LIMIT 1"
+                ).fetchall()
+                claim_plan = connection.exec_driver_sql(
+                    "EXPLAIN QUERY PLAN SELECT id, path "
+                    "FROM pending_file_deletions "
+                    "WHERE (next_attempt_at IS NULL "
+                    "OR next_attempt_at <= '2025-01-01') "
+                    "AND (claim_token IS NULL OR claimed_at IS NULL "
+                    "OR claimed_at < '2025-01-01') "
+                    "ORDER BY next_attempt_at, id LIMIT 500"
+                ).fetchall()
+                retry_deadline_plan = connection.exec_driver_sql(
+                    "EXPLAIN QUERY PLAN SELECT min(next_attempt_at) "
+                    "FROM pending_file_deletions WHERE claim_token IS NULL"
+                ).fetchall()
+                claim_deadline_plan = connection.exec_driver_sql(
+                    "EXPLAIN QUERY PLAN SELECT claimed_at, next_attempt_at "
+                    "FROM pending_file_deletions "
+                    "WHERE claim_token IS NOT NULL AND claimed_at IS NOT NULL "
+                    "ORDER BY claimed_at, id LIMIT 1"
+                ).fetchall()
+            due_text = " ".join(str(row) for row in due_plan)
+            claim_text = " ".join(str(row) for row in claim_plan)
+            retry_text = " ".join(str(row) for row in retry_deadline_plan)
+            claim_deadline_text = " ".join(str(row) for row in claim_deadline_plan)
+            assert {
+                "idx_pending_claim_next_attempt",
+                "idx_pending_claimed_at",
+                "ix_pending_file_deletions_next_attempt_at",
+            } <= indexes
+            assert "ix_pending_file_deletions_next_attempt_at" in due_text
+            assert "ix_pending_file_deletions_next_attempt_at" in claim_text
+            assert "idx_pending_claim_next_attempt" in retry_text
+            assert "idx_pending_claimed_at" in claim_deadline_text
+            assert all(
+                "USE TEMP B-TREE" not in plan
+                for plan in (due_text, claim_text, retry_text, claim_deadline_text)
+            )
+        finally:
+            reopened.close()
+
+    def test_statistics_caps_high_cardinality_maps_deterministically(
+        self, db_manager: DatabaseManager
+    ) -> None:
+        """Metrics response size must not grow without bound."""
+        now = datetime.now(UTC)
+        with db_manager.get_session() as session:
+            session.add_all(
+                [
+                    RadioCall(
+                        call_timestamp=now,
+                        system_id=str(index),
+                        talkgroup_id=index,
+                        upload_ip=f"2001:db8::{index:x}",
+                    )
+                    for index in range(1005)
+                ]
+            )
+            session.commit()
+
+        stats = DatabaseOperations(db_manager).get_statistics()
+
+        assert len(stats["systems"]) == 1000
+        assert list(stats["systems"]) == sorted(stats["systems"])
+        assert len(stats["upload_sources"]) == 1000
+        assert list(stats["upload_sources"]) == sorted(stats["upload_sources"])
+        assert len(stats["talkgroups"]) == 20
+
     def test_log_upload_attempt(self, db_manager: DatabaseManager) -> None:
         """Test logging upload attempts."""
         db_ops = DatabaseOperations(db_manager)
@@ -173,7 +383,7 @@ class TestDatabaseOperations:
             client_ip="127.0.0.1",
             success=True,
             system_id="123",
-            api_key_used="test-key",
+            api_key_used="test-key",  # pragma: allowlist secret
             user_agent="SDRTrunk/1.0",
             filename="test.mp3",
             file_size=1024,
@@ -207,6 +417,10 @@ class TestDatabaseOperations:
             dateTime=old_timestamp,
         )
         old_id = db_ops.save_radio_call(old_upload)
+        with db_manager.get_session() as session:
+            old_call = session.query(RadioCall).filter_by(id=old_id).one()
+            old_call.created_at = now - timedelta(days=40)
+            session.commit()
 
         # New call
         new_upload = create_test_upload(
@@ -280,6 +494,7 @@ class TestDatabaseOperations:
         for sys in summary:
             assert sys["total_calls"] == 3
             assert "top_talkgroups" in sys
+        assert len(db_ops.get_systems_summary(limit=2)) == 2
 
     def test_get_talkgroups_summary(self, db_manager: DatabaseManager) -> None:
         """Test getting talkgroups summary."""

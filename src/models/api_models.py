@@ -1,7 +1,8 @@
 """API request and response models for RdioScanner protocol."""
 
 import re
-from datetime import datetime
+import unicodedata
+from datetime import UTC, datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -14,13 +15,25 @@ class RdioScannerUpload(BaseModel):
     """
 
     # Required fields
-    key: str = Field(..., description="API key for authentication")
-    system: str = Field(..., description="System ID (numeric string)")
+    key: str = Field(
+        ...,
+        max_length=512,
+        repr=False,
+        exclude=True,
+        description="API key for authentication",
+    )
+    system: str = Field(
+        ..., min_length=1, max_length=10, description="System ID (numeric string)"
+    )
     dateTime: int = Field(..., description="Unix timestamp in seconds")
 
     # Audio file info (populated after parsing multipart form)
-    audio_filename: str | None = Field(None, description="Uploaded audio filename")
-    audio_content_type: str | None = Field(None, description="MIME type of audio file")
+    audio_filename: str | None = Field(
+        None, max_length=255, description="Uploaded audio filename"
+    )
+    audio_content_type: str | None = Field(
+        None, max_length=100, description="MIME type of audio file"
+    )
     audio_size: int | None = Field(None, description="Size of audio file in bytes")
 
     # Radio metadata (optional fields)
@@ -29,22 +42,34 @@ class RdioScannerUpload(BaseModel):
     source: int | None = Field(None, description="Source radio ID")
 
     # Labels and descriptions (optional)
-    systemLabel: str | None = Field(None, description="Human-readable system name")
-    talkgroupLabel: str | None = Field(
-        None, description="Human-readable talkgroup name"
+    systemLabel: str | None = Field(
+        None, max_length=255, description="Human-readable system name"
     )
-    talkgroupGroup: str | None = Field(None, description="Talkgroup category/group")
-    talkerAlias: str | None = Field(None, description="Alias of the talking radio")
+    talkgroupLabel: str | None = Field(
+        None, max_length=255, description="Human-readable talkgroup name"
+    )
+    talkgroupGroup: str | None = Field(
+        None, max_length=255, description="Talkgroup category/group"
+    )
+    talkerAlias: str | None = Field(
+        None, max_length=255, description="Alias of the talking radio"
+    )
     patches: str | None = Field(
-        None, description="Comma-separated list of patched talkgroups"
+        None,
+        max_length=4096,
+        description="Comma-separated list of patched talkgroups",
     )
 
     # Additional fields that might be sent
     frequencies: str | None = Field(
-        None, description="Comma-separated list of frequencies"
+        None, max_length=4096, description="Comma-separated list of frequencies"
     )
-    sources: str | None = Field(None, description="Comma-separated list of source IDs")
-    talkgroupTag: str | None = Field(None, description="Additional talkgroup tag")
+    sources: str | None = Field(
+        None, max_length=4096, description="Comma-separated list of source IDs"
+    )
+    talkgroupTag: str | None = Field(
+        None, max_length=255, description="Additional talkgroup tag"
+    )
 
     # Test mode flag (not stored, just for request handling)
     test: int | None = Field(None, description="Test mode flag (1 for test)")
@@ -59,7 +84,7 @@ class RdioScannerUpload(BaseModel):
         """Validate system ID is numeric and reasonable length."""
         if not v:
             raise ValueError("System ID cannot be empty")
-        if not v.isdigit():
+        if not re.fullmatch(r"[0-9]+", v):
             raise ValueError("System ID must be numeric")
         if len(v) > 10:
             raise ValueError("System ID too long (max 10 digits)")
@@ -72,16 +97,16 @@ class RdioScannerUpload(BaseModel):
         if v < 0:
             raise ValueError("Timestamp cannot be negative")
         # Check if timestamp is within reasonable range (not before 2000, not too far in future)
-        current_time = int(datetime.now().timestamp())
-        min_time = int(
-            datetime(2000, 1, 1).timestamp()
-        )  # Allow older timestamps for testing
-        max_time = current_time + (86400 * 365)  # Allow up to 1 year in future
+        current_time = int(datetime.now(UTC).timestamp())
+        # Interpret the protocol epoch boundary independently of the server's
+        # local timezone and daylight-saving configuration.
+        min_time = int(datetime(2000, 1, 1, tzinfo=UTC).timestamp())
+        max_time = current_time + 300  # Allow only ordinary sender clock skew
 
         if v < min_time:
-            raise ValueError(f"Timestamp too old (before 2000): {v}")
+            raise ValueError("Timestamp is before the supported year 2000")
         if v > max_time:
-            raise ValueError(f"Timestamp too far in future: {v}")
+            raise ValueError("Timestamp is too far in the future")
         return v
 
     @field_validator("frequency")
@@ -94,7 +119,7 @@ class RdioScannerUpload(BaseModel):
             raise ValueError("Frequency must be positive")
         # Sanity cap only; HF/shortwave below 25 MHz is legitimate
         if v > 6_000_000_000:
-            raise ValueError(f"Frequency out of reasonable range: {v} Hz")
+            raise ValueError("Frequency is outside the supported range")
         return v
 
     @field_validator("talkgroup", "source")
@@ -106,7 +131,7 @@ class RdioScannerUpload(BaseModel):
         if v < 0:
             raise ValueError("Radio ID cannot be negative")
         if v > 999_999_999:  # Max reasonable ID
-            raise ValueError(f"Radio ID too large: {v}")
+            raise ValueError("Radio ID is too large")
         return v
 
     @field_validator(
@@ -117,8 +142,14 @@ class RdioScannerUpload(BaseModel):
         """Validate and sanitize label strings."""
         if v is None:
             return v
-        # Remove any control characters
-        v = re.sub(r"[\x00-\x1f\x7f-\x9f]", "", v)
+        # Strip all Unicode control/format/surrogate/private-use/unassigned
+        # characters. This includes bidi overrides and other invisible format
+        # controls that can forge or visually reorder CLI/log output.
+        v = "".join(
+            character
+            for character in v
+            if not unicodedata.category(character).startswith("C")
+        )
         # Limit length
         if len(v) > 255:
             v = v[:255]
@@ -146,8 +177,9 @@ class RdioScannerUpload(BaseModel):
         # Allow empty string
         if v == "":
             return None
-        if not re.match(r"^[\d,]+$", v):
-            raise ValueError(f"Invalid comma-separated list format: {v}")
+        if not re.fullmatch(r"[0-9,]+", v):
+            # Never embed the complete attacker-controlled value in an error.
+            raise ValueError("Invalid comma-separated list format")
         return v
 
     @field_validator("audio_size")

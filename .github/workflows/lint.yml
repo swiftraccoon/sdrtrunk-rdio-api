@@ -6,72 +6,73 @@ on:
   pull_request:
     branches: [ main, develop ]
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
   PYTHON_VERSION: "3.13"
+  UV_PYTHON: "3.13"
+  UV_VERSION: "0.12.7"
+  # Fail closed if pyproject.toml and the reviewed lockfile diverge. This also
+  # prevents later `uv run` commands from silently re-locking in CI.
+  UV_LOCKED: "1"
+  UV_NO_BUILD_ISOLATION: "1"
 
 jobs:
   format-lint:
     name: Format & Lint
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      with:
+        persist-credentials: false
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v7
+      uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
       with:
-        version: "latest"
+        version: ${{ env.UV_VERSION }}
 
     - name: Set up Python
-      run: uv python install ${{ env.PYTHON_VERSION }}
-
-    - name: Cache dependencies
-      uses: actions/cache@v5
-      with:
-        path: ~/.cache/uv
-        key: ${{ runner.os }}-uv-${{ hashFiles('**/pyproject.toml') }}
-        restore-keys: |
-          ${{ runner.os }}-uv-
+      run: uv python install "$PYTHON_VERSION"
 
     - name: Install dependencies
-      run: uv sync --all-extras --dev
+      run: |
+        uv sync --locked --only-group build --no-install-project --no-build
+        uv sync --all-extras --dev --locked --no-build-isolation
 
     - name: Check code formatting with black
-      run: uv run black --check --diff .
+      run: uv run --locked black --check --diff .
 
     - name: Check import sorting with isort
-      run: uv run isort --check-only --diff .
+      run: uv run --locked isort --check-only --diff .
 
     - name: Lint with ruff
-      run: uv run ruff check --output-format=github .
+      run: uv run --locked ruff check --output-format=github .
 
   type-check:
     name: Type Check
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      with:
+        persist-credentials: false
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v7
+      uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
       with:
-        version: "latest"
+        version: ${{ env.UV_VERSION }}
 
     - name: Set up Python
-      run: uv python install ${{ env.PYTHON_VERSION }}
-
-    - name: Cache dependencies
-      uses: actions/cache@v5
-      with:
-        path: ~/.cache/uv
-        key: ${{ runner.os }}-uv-${{ hashFiles('**/pyproject.toml') }}
-        restore-keys: |
-          ${{ runner.os }}-uv-
+      run: uv python install "$PYTHON_VERSION"
 
     - name: Install dependencies
-      run: uv sync --all-extras --dev
+      run: |
+        uv sync --locked --only-group build --no-install-project --no-build
+        uv sync --all-extras --dev --locked --no-build-isolation
 
     - name: Type check with mypy
-      run: uv run mypy src --show-error-codes --pretty
+      run: uv run --locked mypy src --show-error-codes --pretty

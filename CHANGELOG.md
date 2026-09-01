@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
 - Automatic retention enforcement: the server periodically deletes calls
   (audio + metadata + upload logs) older than `retention_days`, with a new
   `storage.cleanup_interval_hours` setting; stale temp files are cleaned too
@@ -39,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pre-commit hooks configuration
 
 ### Changed
+
 - Rate limits now come from `security.rate_limit` configuration
   (minute/hour/day) instead of hardcoded values; defaults raised to
   600/minute, 10,000/hour, 100,000/day so busy trunked systems don't lose
@@ -69,6 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated test fixtures for better isolation
 
 ### Fixed
+
 - `clean` crashed with `UnboundLocalError` when only database records (no
   audio files) were old enough to delete
 - `clean` now deletes the audio files referenced by removed records and
@@ -85,6 +88,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Validation now correctly handles both comma-separated and JSON array formats
 
 ### Removed
+
 - Configuration options that nothing implemented: `database.pool_size`,
   `database.max_overflow`, `processing.store_fields`,
   `monitoring.statistics.*` (stale keys in existing configs are ignored)
@@ -97,6 +101,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   environment variables)
 
 ### Security
+
 - Config files that exist but fail to parse or validate now abort startup
   instead of silently running with defaults (which meant open access)
 - CORS no longer combines wildcard origins with credentials
@@ -109,6 +114,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.0] - 2024-12-06
 
 ### Added
+
 - Initial release of sdrtrunk-rdio-api
 - RdioScanner protocol implementation for SDRTrunk
 - HTTP/2 support via Hypercorn
@@ -125,6 +131,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Detailed documentation
 
 ### Features
+
 - Multi-system support
 - Talkgroup tracking
 - Audio file validation (MP3)
@@ -137,6 +144,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.9.0] - 2024-11-30 (Pre-release)
 
 ### Added
+
 - Beta version for testing
 - Core RdioScanner API endpoint
 - Basic file handling
@@ -147,11 +155,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Version Guidelines
 
 ### Version Numbering
+
 - **Major (X.0.0)**: Breaking changes to API or configuration
 - **Minor (0.X.0)**: New features, backwards compatible
 - **Patch (0.0.X)**: Bug fixes, security patches
 
 ### Release Process
+
 1. Update version in `pyproject.toml`
 2. Update CHANGELOG.md with release date
 3. Create git tag: `git tag -a v1.0.0 -m "Release version 1.0.0"`
@@ -159,6 +169,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 5. Create GitHub release with changelog excerpt
 
 ### Deprecation Policy
+
 - Features will be deprecated with one minor version warning
 - Deprecated features will be removed in next major version
 - Clear deprecation warnings in logs and documentation
